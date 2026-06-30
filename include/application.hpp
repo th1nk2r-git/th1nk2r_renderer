@@ -12,8 +12,8 @@ public:
     auto run() -> void;
 
 private:
-    WindowManager window_manager;
     VulkanContext vulkan_context;
+    WindowManager window_manager;
 };
 
 #endif

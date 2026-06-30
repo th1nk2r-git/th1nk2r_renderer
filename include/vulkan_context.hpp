@@ -4,6 +4,7 @@
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 
 #include <vulkan/vulkan_raii.hpp>
+#include <GLFW/glfw3.h>
 
 class VulkanContext {
 public:
@@ -13,7 +14,7 @@ public:
     auto create_instance() -> void;
 
     // pick a suitable GPU
-    auto pick_physical_device() -> void;
+    auto pick_physical_device(const vk::raii::SurfaceKHR& surface) -> void;
 
     // create the logical device
     auto create_logical_device() -> void;
@@ -56,6 +57,8 @@ private:
     vk::raii::Queue present_queue = nullptr;
 
     auto check_validation_layer_support() -> bool;
+
+    auto is_device_suitable(const vk::raii::PhysicalDevice& dev, const vk::raii::SurfaceKHR& surface) -> bool;
 };
 
 #endif
