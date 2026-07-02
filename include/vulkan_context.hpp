@@ -4,7 +4,9 @@
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 
 #include <vulkan/vulkan_raii.hpp>
-#include <GLFW/glfw3.h>
+#include <optional>
+
+#include "window.hpp"
 
 class VulkanContext {
 public:
@@ -17,13 +19,17 @@ public:
     auto pick_physical_device(const vk::raii::SurfaceKHR& surface) -> void;
 
     // create the logical device
-    auto create_logical_device() -> void;
+    auto create_logical_device(const vk::raii::SurfaceKHR& surface) -> void;
 
     // create the graphics queue
-    auto create_graphics_queue() -> void;
+    auto create_graphics_queue() -> void {
+        graphics_queue = device.getQueue(graphics_family.value(), 0);
+    }
 
     // create the present queue
-    auto create_present_queue() -> void;
+    auto create_present_queue() -> void {
+        graphics_queue = device.getQueue(present_family.value(), 0);
+    }
 
     // return the reference of the vulkan instance
     auto get_instance() -> vk::raii::Instance& {
@@ -53,8 +59,13 @@ private:
 
     vk::raii::PhysicalDevice physical_device = nullptr;
     vk::raii::Device device = nullptr;
+
+    std::optional<uint32_t> graphics_family;
+    std::optional<uint32_t> present_family; 
+
     vk::raii::Queue graphics_queue = nullptr;
     vk::raii::Queue present_queue = nullptr;
+
 
     auto check_validation_layer_support() -> bool;
 
