@@ -8,7 +8,8 @@ auto Application::init() -> void {
     vulkan_context.create_logical_device(surface.get());
     vulkan_context.create_graphics_queue();
     vulkan_context.create_present_queue();
-    swapchain.create(vulkan_context, surface);
+    swapchain.create(vulkan_context, surface, window);
+    swapchain.create_image_views(vulkan_context.get_device());
 }
 
 auto Application::run() -> void {

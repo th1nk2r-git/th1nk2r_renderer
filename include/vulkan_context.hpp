@@ -1,5 +1,5 @@
-#ifndef VULKAN_CONTEXT
-#define VULKAN_CONTEXT
+#ifndef VULKAN_CONTEXT_HPP
+#define VULKAN_CONTEXT_HPP
 
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 
@@ -28,17 +28,32 @@ public:
 
     // create the present queue
     auto create_present_queue() -> void {
-        graphics_queue = device.getQueue(present_family.value(), 0);
+        present_queue = device.getQueue(present_family.value(), 0);
     }
 
     // return the reference of the vulkan instance
-    auto get_instance() -> vk::raii::Instance& {
+    auto get_instance() const -> const vk::raii::Instance& {
         return instance;
     }
 
-    // return the reference of the logical device
-    auto get_device() -> vk::raii::Device& {
+    // return the const reference of the logical device
+    auto get_device() const -> const vk::raii::Device& {
         return device;
+    }
+
+    // return the const reference of the physical device
+    auto get_physical_device() const -> const vk::raii::PhysicalDevice& {
+        return physical_device;
+    }
+
+    // return the graphics family
+    auto get_graphics_family() const -> uint32_t {
+        return graphics_family.value();
+    }
+
+    // return the present family
+    auto get_present_family() const -> uint32_t {
+        return present_family.value();
     }
 
 private:

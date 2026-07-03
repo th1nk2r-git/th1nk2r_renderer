@@ -1,5 +1,5 @@
-#ifndef APPLICATION
-#define APPLICATION
+#ifndef APPLICATION_HPP
+#define APPLICATION_HPP
 
 #include "window.hpp"
 #include "vulkan_context.hpp"

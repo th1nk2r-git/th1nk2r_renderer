@@ -31,7 +31,7 @@ auto VulkanContext::create_instance() -> void {
         create_info.ppEnabledLayerNames = validation_layers.data();
     }
 
-    instance = vk::raii::Instance(dispatcher, create_info);
+    this->instance = vk::raii::Instance(dispatcher, create_info);
 }
 
 auto VulkanContext::check_validation_layer_support() -> bool {
@@ -117,20 +117,20 @@ auto VulkanContext::create_logical_device(const vk::raii::SurfaceKHR& surface) -
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(queue_families.size()); ++i) {
         if (queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics) {
-            graphics_family = i;
+            this->graphics_family = i;
         }
         vk::Bool32 present_support = physical_device.getSurfaceSupportKHR(i, surface);
         if (present_support) {
-            present_family = i;
+            this->present_family = i;
         }
-        if (graphics_family.has_value() && present_family.has_value()) {
+        if (this->graphics_family.has_value() && this->present_family.has_value()) {
             break;
         }
     }
 
     std::set<uint32_t> unique_queue_families = {
-        graphics_family.value(),
-        present_family.value()
+        this->graphics_family.value(),
+        this->present_family.value()
     };
 
     float queue_priority = 0.5f;
@@ -155,5 +155,5 @@ auto VulkanContext::create_logical_device(const vk::raii::SurfaceKHR& surface) -
         .ppEnabledExtensionNames = required_device_extensions.data()
     };
 
-    device = vk::raii::Device(physical_device, device_create_info);
+    this->device = physical_device.createDevice(device_create_info);
 }

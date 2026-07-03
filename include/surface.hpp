@@ -1,5 +1,5 @@
-#ifndef SURFACE
-#define SURFACE
+#ifndef SURFACE_HPP
+#define SURFACE_HPP
 
 #include <vulkan/vulkan_raii.hpp>
 #include "window.hpp"
@@ -9,8 +9,14 @@ public:
     Surface() = default;
 
     // create the surface
-    auto create(const vk::raii::Instance& instance, const Window& window) -> void;
-
+    auto create(const vk::raii::Instance& instance, const Window& window) -> void {
+        VkSurfaceKHR raw_handle;
+        if (glfwCreateWindowSurface(*instance, window.get(), nullptr, &raw_handle) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create window surface!");
+        }
+        handle = vk::raii::SurfaceKHR(instance, raw_handle);
+    }
+    
     // return the const reference of the surface handle
     auto get() const -> const vk::raii::SurfaceKHR& {
         return handle;

@@ -1,6 +1,7 @@
-#ifndef WINDOW
-#define WINDOW
+#ifndef WINDOW_HPP
+#define WINDOW_HPP
 
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <memory>
 
