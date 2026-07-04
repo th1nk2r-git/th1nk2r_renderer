@@ -1,4 +1,4 @@
-#include "application.hpp"
+#include "core/application.hpp"
 
 auto Application::init() -> void {
     window.create(1200, 800);
@@ -8,8 +8,8 @@ auto Application::init() -> void {
     vulkan_context.create_logical_device(surface.get());
     vulkan_context.create_graphics_queue();
     vulkan_context.create_present_queue();
-    swapchain.create(vulkan_context, surface, window);
-    swapchain.create_image_views(vulkan_context.get_device());
+    
+    swapchain_context.create(vulkan_context, surface, window);
 }
 
 auto Application::run() -> void {

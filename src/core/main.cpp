@@ -1,5 +1,5 @@
 #include <iostream>
-#include "application.hpp"
+#include "core/application.hpp"
 
 int main(int argc, char **argv) {
     Application app;
@@ -7,7 +7,7 @@ int main(int argc, char **argv) {
         app.init();
         app.run();
     } 
-    catch(std::exception ex) {
+    catch(const std::exception& ex) {
         std::cerr << ex.what() << std::endl;
         return EXIT_FAILURE;
     }

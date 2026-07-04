@@ -1,10 +1,10 @@
 #ifndef APPLICATION_HPP
 #define APPLICATION_HPP
 
-#include "window.hpp"
-#include "vulkan_context.hpp"
-#include "surface.hpp"
-#include "swapchain.hpp"
+#include "platform/window.hpp"
+#include "rhi/vulkan_context.hpp"
+#include "rhi/surface.hpp"
+#include "rhi/swapchain_context.hpp"
 
 class Application {
 public:
@@ -20,7 +20,7 @@ private:
     VulkanContext vulkan_context;
     Window window;
     Surface surface;
-    Swapchain swapchain;
+    SwapchainContext swapchain_context;
 };
 
 #endif

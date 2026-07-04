@@ -1,9 +1,9 @@
 #ifndef SWAPCHAIN_HPP
 #define SWAPCHAIN_HPP
 
-#include "vulkan_context.hpp"
-#include "surface.hpp"
-#include "image_view.hpp"
+#include "rhi/vulkan_context.hpp"
+#include "rhi/surface.hpp"
+#include "rhi/image_view.hpp"
 
 class Swapchain {
 public:
@@ -12,13 +12,28 @@ public:
     // create the swapchain
     auto create(const VulkanContext& vulkan_context, const Surface& surface, const Window& window) -> void;
 
-    // return the const reference of the swapchain handle
+    // create the swapchain image views
+    auto create_image_views(const vk::raii::Device& device) -> void;
+
+    // return the const reference of the swapchain
     auto get() const -> const vk::raii::SwapchainKHR& {
         return handle;
     }
 
-    // create the swapchain image views
-    auto create_image_views(const vk::raii::Device& device) -> void;
+    // return the const reference of the swapchain image format
+    auto get_swapchain_image_format() const -> const vk::Format& {
+        return swapchain_image_format;
+    }
+
+    // return the const reference of the swapchain image extent
+    auto get_swapchain_image_extent() const -> const vk::Extent2D& {
+        return swapchain_extent;
+    }
+
+    // return the const reference of the swapchain image views
+    auto get_swapchain_image_views() const -> const std::vector<ImageView>& {
+        return swapchain_image_views;
+    }
 
 private:
     vk::raii::SwapchainKHR handle = nullptr;

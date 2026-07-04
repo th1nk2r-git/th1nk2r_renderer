@@ -6,7 +6,7 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <optional>
 
-#include "window.hpp"
+#include "platform/window.hpp"
 
 class VulkanContext {
 public:

@@ -1,4 +1,4 @@
-#include "window.hpp"
+#include "platform/window.hpp"
 #include <stdexcept>
 
 auto Window::create(uint16_t width, uint16_t height) -> void {
@@ -24,6 +24,8 @@ auto Window::create(uint16_t width, uint16_t height) -> void {
 }
 
 Window::~Window() {
-    glfwDestroyWindow(this->handle);
+    if (this->handle != nullptr) {
+        glfwDestroyWindow(this->handle);
+    }
     glfwTerminate();
 }

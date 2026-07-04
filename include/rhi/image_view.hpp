@@ -40,12 +40,7 @@ public:
         );
     }
 
-    ImageView(ImageView&&) noexcept = default;
-    ImageView& operator=(ImageView&&) noexcept = default;
-
-    ImageView(const ImageView&) = delete;
-    ImageView& operator=(const ImageView&) = delete;
-
+    // return the const reference of the image view
     auto get() const -> const vk::raii::ImageView& { 
         return handle; 
     }

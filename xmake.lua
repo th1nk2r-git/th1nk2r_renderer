@@ -15,7 +15,7 @@ target("application")
     add_packages("vulkansdk", "glfw", "glm")
 
     after_build(function (target)
-        local shader_dir = os.projectdir() .. "/shader"
+        local shader_dir = os.projectdir() .. "/shaders"
         local output_dir = os.projectdir() .. "/bin/spv"
         os.mkdir(output_dir)
 

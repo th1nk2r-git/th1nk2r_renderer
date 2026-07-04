@@ -2,7 +2,7 @@
 #define SURFACE_HPP
 
 #include <vulkan/vulkan_raii.hpp>
-#include "window.hpp"
+#include "platform/window.hpp"
 
 class Surface {
 public:
