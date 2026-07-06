@@ -9,8 +9,6 @@ class SwapchainResources {
 public:
     SwapchainResources() = default;
 
-    ~SwapchainResources() = default;
-
     // create the swapchain resources
     auto create(const Context& context, const Window& window) -> void;
     

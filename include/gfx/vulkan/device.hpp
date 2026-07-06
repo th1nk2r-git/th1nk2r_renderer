@@ -11,8 +11,6 @@ class Device {
 public:
     Device() = default;
 
-    ~Device() = default;
-
     // create the device
     auto create(const Instance& instance, const Surface& surface) -> void {
         pick_physical_device(instance, surface);

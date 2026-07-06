@@ -40,8 +40,6 @@ public:
         );
     }
 
-    ~ImageView() = default;
-
     // return the const reference of the image view
     auto get() const -> const vk::raii::ImageView& { 
         return handle_; 

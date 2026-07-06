@@ -9,8 +9,6 @@ class Swapchain {
 public:
     Swapchain() = default;
 
-    ~Swapchain() = default;
-
     // create the swapchain
     auto create(const Context& context, const Window& window) -> void;
 

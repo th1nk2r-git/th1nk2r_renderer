@@ -29,8 +29,6 @@ public:
                 .setLayers(1));
     }
 
-    ~Framebuffer() = default;
-
     // return the const reference of the framebuffer
     auto get() const -> const vk::raii::Framebuffer& {
         return handle_;

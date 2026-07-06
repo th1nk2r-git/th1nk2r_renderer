@@ -10,8 +10,6 @@ class Context {
 public:
     Context() = default;
 
-    ~Context() = default;
-
     // create the vulkan context
     auto create(const Window& window) -> void {
         instance_.create();

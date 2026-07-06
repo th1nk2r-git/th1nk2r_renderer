@@ -10,8 +10,6 @@ class Instance {
 public:
     Instance() = default;
 
-    ~Instance() = default;
-
     // create the vulkan instance
     auto create() -> void;
 

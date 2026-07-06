@@ -8,8 +8,6 @@ class Surface {
 public:
     Surface() = default;
 
-    ~Surface() = default;
-
     // create the surface
     auto create(const Instance& instance, const Window& window) -> void {
         VkSurfaceKHR raw_handle;

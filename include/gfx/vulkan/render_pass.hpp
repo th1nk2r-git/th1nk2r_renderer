@@ -46,8 +46,6 @@ public:
             .setDependencies(dependency)
         );
     }
-    
-    ~RenderPass() = default;
 
     // return the const reference of the render pass
     auto get() const -> const vk::raii::RenderPass& {
