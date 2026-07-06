@@ -1,4 +1,4 @@
-#include "rhi/swapchain.hpp"
+#include "gfx/vulkan/swapchain.hpp"
 
 auto Swapchain::choose_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_surface_formats) -> vk::SurfaceFormatKHR {
     for (const auto& surface_format : available_surface_formats) {
@@ -33,25 +33,25 @@ auto Swapchain::choose_extent(const vk::SurfaceCapabilitiesKHR& capabilities, co
     return actual_extent;
 }
 
-auto Swapchain::create(const VulkanContext& vulkan_context, const Surface& surface, const Window& window) -> void {
-    auto available_surface_formats = surface.query_formats(
-        vulkan_context.get_physical_device()
+auto Swapchain::create(const Context& context, const Window& window) -> void {
+    auto available_surface_formats = context.surface().query_formats(
+        context.device().physical_device()
     );
 
-    auto available_present_modes = surface.query_present_modes(
-        vulkan_context.get_physical_device()
+    auto available_present_modes = context.surface().query_present_modes(
+        context.device().physical_device()
     );
 
-    auto capabilities = surface.query_capabilities(
-        vulkan_context.get_physical_device()
+    auto capabilities = context.surface().query_capabilities(
+        context.device().physical_device()
     );
 
     auto surface_format = choose_surface_format(available_surface_formats);
     auto present_mode = choose_present_mode(available_present_modes);
     auto extent = choose_extent(capabilities, window);
 
-    this->swapchain_image_format = surface_format.format;
-    this->swapchain_extent = extent;
+    this->swapchain_image_format_ = surface_format.format;
+    this->swapchain_extent_ = extent;
 
     uint32_t image_count = capabilities.minImageCount + 1;
     if (capabilities.maxImageCount > 0 && image_count > capabilities.maxImageCount) {
@@ -59,7 +59,7 @@ auto Swapchain::create(const VulkanContext& vulkan_context, const Surface& surfa
     }
 
     vk::SwapchainCreateInfoKHR create_info;
-    create_info.surface = surface.get();
+    create_info.surface = context.surface().get();
     create_info.minImageCount = image_count;
     create_info.imageFormat = surface_format.format;
     create_info.imageColorSpace = surface_format.colorSpace;
@@ -67,8 +67,8 @@ auto Swapchain::create(const VulkanContext& vulkan_context, const Surface& surfa
     create_info.imageArrayLayers = 1;
     create_info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
 
-    auto graphics_family = vulkan_context.get_graphics_family();
-    auto present_family = vulkan_context.get_present_family();
+    auto graphics_family = context.device().graphics_family();
+    auto present_family = context.device().present_family();
 
     std::vector<uint32_t> queue_family_indices { 
         graphics_family, 
@@ -87,21 +87,21 @@ auto Swapchain::create(const VulkanContext& vulkan_context, const Surface& surfa
     create_info.presentMode = present_mode;
     create_info.clipped = true;
     create_info.oldSwapchain = nullptr;
-    this->handle = vulkan_context.get_device().createSwapchainKHR(create_info);
+    this->handle_ = context.device().logical_device().createSwapchainKHR(create_info);
 
-    this->swapchain_images = handle.getImages();
+    this->swapchain_images_ = handle_.getImages();
 }
 
 
-auto Swapchain::create_image_views(const vk::raii::Device& device) -> void {
-    swapchain_image_views.clear();
-    swapchain_image_views.reserve(swapchain_images.size());
+auto Swapchain::create_image_views(const Device& device) -> void {
+    swapchain_image_views_.clear();
+    swapchain_image_views_.reserve(swapchain_images_.size());
 
-    for (const auto& image : swapchain_images) {
-        swapchain_image_views.emplace_back(
+    for (const auto& image : swapchain_images_) {
+        swapchain_image_views_.emplace_back(
             device,
             image,
-            swapchain_image_format
+            swapchain_image_format_
         );
     }
 }

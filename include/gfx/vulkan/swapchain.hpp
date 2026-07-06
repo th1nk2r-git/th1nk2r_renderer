@@ -1,48 +1,50 @@
 #ifndef SWAPCHAIN_HPP
 #define SWAPCHAIN_HPP
 
-#include "rhi/vulkan_context.hpp"
-#include "rhi/surface.hpp"
-#include "rhi/image_view.hpp"
+#include "gfx/vulkan/context.hpp"
+#include "gfx/vulkan/surface.hpp"
+#include "gfx/vulkan/image_view.hpp"
 
 class Swapchain {
 public:
     Swapchain() = default;
 
+    ~Swapchain() = default;
+
     // create the swapchain
-    auto create(const VulkanContext& vulkan_context, const Surface& surface, const Window& window) -> void;
+    auto create(const Context& context, const Window& window) -> void;
 
     // create the swapchain image views
-    auto create_image_views(const vk::raii::Device& device) -> void;
+    auto create_image_views(const Device& device) -> void;
 
     // return the const reference of the swapchain
     auto get() const -> const vk::raii::SwapchainKHR& {
-        return handle;
+        return handle_;
     }
 
     // return the const reference of the swapchain image format
-    auto get_swapchain_image_format() const -> const vk::Format& {
-        return swapchain_image_format;
+    auto swapchain_image_format() const -> const vk::Format& {
+        return swapchain_image_format_;
     }
 
     // return the const reference of the swapchain image extent
-    auto get_swapchain_image_extent() const -> const vk::Extent2D& {
-        return swapchain_extent;
+    auto swapchain_image_extent() const -> const vk::Extent2D& {
+        return swapchain_extent_;
     }
 
     // return the const reference of the swapchain image views
-    auto get_swapchain_image_views() const -> const std::vector<ImageView>& {
-        return swapchain_image_views;
+    auto swapchain_image_views() const -> const std::vector<ImageView>& {
+        return swapchain_image_views_;
     }
 
 private:
-    vk::raii::SwapchainKHR handle = nullptr;
+    vk::raii::SwapchainKHR handle_ = nullptr;
 
-    std::vector<vk::Image> swapchain_images;
-    std::vector<ImageView> swapchain_image_views;
+    std::vector<vk::Image> swapchain_images_;
+    std::vector<ImageView> swapchain_image_views_;
 
-    vk::Format swapchain_image_format;
-    vk::Extent2D swapchain_extent;
+    vk::Format swapchain_image_format_;
+    vk::Extent2D swapchain_extent_;
 
 
     // choose a suitable surface format

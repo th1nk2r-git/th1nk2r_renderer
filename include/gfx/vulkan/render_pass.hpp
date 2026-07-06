@@ -1,13 +1,13 @@
 #ifndef RENDER_PASS_HPP
 #define RENDER_PASS_HPP
 
-#include <vulkan/vulkan_raii.hpp>
+#include "gfx/vulkan/device.hpp"
 
 class RenderPass {
 public:
     RenderPass() = default;
     
-    RenderPass(vk::raii::Device const& device, const vk::Format& color_format) {
+    RenderPass(const Device& device, const vk::Format& color_format) {
         vk::AttachmentDescription color_attachment{};
         color_attachment
             .setFormat(color_format)
@@ -39,13 +39,15 @@ public:
             .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite);
 
         vk::RenderPassCreateInfo create_info{};
-        this->handle = device.createRenderPass(
+        this->handle = device.logical_device().createRenderPass(
         create_info
             .setAttachments(color_attachment)
             .setSubpasses(subpass)
             .setDependencies(dependency)
         );
     }
+    
+    ~RenderPass() = default;
 
     // return the const reference of the render pass
     auto get() const -> const vk::raii::RenderPass& {

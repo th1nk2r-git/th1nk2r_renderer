@@ -9,7 +9,7 @@ auto Window::create(uint16_t width, uint16_t height) -> void {
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    this->handle = glfwCreateWindow(
+    this->handle_ = glfwCreateWindow(
         width,
         height,
         "th1nk2r_renderer", 
@@ -17,15 +17,15 @@ auto Window::create(uint16_t width, uint16_t height) -> void {
         nullptr
     );
 
-    if (!this->handle) {
+    if (!this->handle_) {
         glfwTerminate();
         throw std::runtime_error("failed to create the window!");
     }
 }
 
 Window::~Window() {
-    if (this->handle != nullptr) {
-        glfwDestroyWindow(this->handle);
+    if (this->handle_ != nullptr) {
+        glfwDestroyWindow(this->handle_);
     }
     glfwTerminate();
 }

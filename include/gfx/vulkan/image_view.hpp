@@ -1,14 +1,14 @@
 #ifndef IMAGE_VIEW_HPP
 #define IMAGE_VIEW_HPP
 
-#include <vulkan/vulkan_raii.hpp>
+#include "gfx/vulkan/device.hpp"
 
 class ImageView {
 public:
     ImageView() = default;
 
     ImageView(
-        vk::raii::Device const& device,
+        const Device& device,
         vk::Image image,
         vk::Format format,
         vk::ImageAspectFlags aspect_flags = vk::ImageAspectFlagBits::eColor,
@@ -24,7 +24,7 @@ public:
             vk::ComponentSwizzle::eIdentity
         }
     ) {
-        handle = device.createImageView(
+        handle_ = device.logical_device().createImageView(
             vk::ImageViewCreateInfo{}
                 .setImage(image)
                 .setViewType(view_type)
@@ -40,13 +40,15 @@ public:
         );
     }
 
+    ~ImageView() = default;
+
     // return the const reference of the image view
     auto get() const -> const vk::raii::ImageView& { 
-        return handle; 
+        return handle_; 
     }
 
 private:
-    vk::raii::ImageView handle = nullptr;
+    vk::raii::ImageView handle_ = nullptr;
 };
 
 #endif
