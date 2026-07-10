@@ -1,5 +1,5 @@
 #include <GLFW/glfw3.h>
-#include "gfx/vulkan/instance.hpp"
+#include "gfx/core/instance.hpp"
 
 
 auto Instance::create() -> void {

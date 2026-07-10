@@ -2,9 +2,9 @@
 #define CONTEXT_HPP
 
 #include "platform/window.hpp"
-#include "gfx/vulkan/instance.hpp"
-#include "gfx/vulkan/surface.hpp"
-#include "gfx/vulkan/device.hpp"
+#include "gfx/core/instance.hpp"
+#include "gfx/core/surface.hpp"
+#include "gfx/core/device.hpp"
 
 class Context {
 public:

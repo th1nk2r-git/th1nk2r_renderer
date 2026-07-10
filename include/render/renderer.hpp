@@ -2,8 +2,8 @@
 #define RENDERER
 
 #include "platform/window.hpp"
-#include "gfx/vulkan/context.hpp"
-#include "gfx/vulkan/swapchain_resources.hpp"
+#include "gfx/core/context.hpp"
+#include "gfx/presentation/swapchain_resources.hpp"
 
 class Renderer {
 public:

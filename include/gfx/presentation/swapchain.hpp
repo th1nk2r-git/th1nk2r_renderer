@@ -1,9 +1,9 @@
 #ifndef SWAPCHAIN_HPP
 #define SWAPCHAIN_HPP
 
-#include "gfx/vulkan/context.hpp"
-#include "gfx/vulkan/surface.hpp"
-#include "gfx/vulkan/image_view.hpp"
+#include "gfx/core/context.hpp"
+#include "gfx/core/surface.hpp"
+#include "gfx/presentation/image_view.hpp"
 
 class Swapchain {
 public:

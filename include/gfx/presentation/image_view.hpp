@@ -1,7 +1,7 @@
 #ifndef IMAGE_VIEW_HPP
 #define IMAGE_VIEW_HPP
 
-#include "gfx/vulkan/device.hpp"
+#include "gfx/core/device.hpp"
 
 class ImageView {
 public:
@@ -23,22 +23,7 @@ public:
             vk::ComponentSwizzle::eIdentity,
             vk::ComponentSwizzle::eIdentity
         }
-    ) {
-        handle_ = device.logical_device().createImageView(
-            vk::ImageViewCreateInfo{}
-                .setImage(image)
-                .setViewType(view_type)
-                .setFormat(format)
-                .setComponents(components)
-                .setSubresourceRange(vk::ImageSubresourceRange{
-                    aspect_flags,
-                    base_mip_level,
-                    level_count,
-                    base_array_layer,
-                    layer_count
-                })
-        );
-    }
+    );
 
     // return the const reference of the image view
     auto get() const -> const vk::raii::ImageView& { 

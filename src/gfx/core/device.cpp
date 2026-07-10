@@ -1,7 +1,7 @@
 #include <optional>
 #include <set>
 
-#include "gfx/vulkan/device.hpp"
+#include "gfx/core/device.hpp"
 
 auto Device::pick_physical_device(const Instance& instance, const Surface& surface) -> void {
     auto physical_devices = instance.get().enumeratePhysicalDevices();
@@ -62,8 +62,8 @@ auto Device::create_logical_device(const Surface& surface) -> void {
     feature_chain = {
         {},                                    // vk::PhysicalDeviceFeatures2 (empty for now)
         {.shaderDrawParameters = true},        // Enable shader draw parameters from Vulkan 1.1
-        {.dynamicRendering = true},            // Enable dynamic rendering from Vulkan 1.3
-        {.extendedDynamicState = true}         // Enable extended dynamic state from the extension
+        {.dynamicRendering = false},            // Enable dynamic rendering from Vulkan 1.3
+        {.extendedDynamicState = false}         // Enable extended dynamic state from the extension
     };
 
     auto queue_families = physical_device_.getQueueFamilyProperties();

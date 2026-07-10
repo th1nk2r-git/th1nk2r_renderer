@@ -1,4 +1,4 @@
-#include "gfx/vulkan/swapchain_resources.hpp"
+#include "gfx/presentation/swapchain_resources.hpp"
 
 auto SwapchainResources::create(const Context& context, const Window& window) -> void {
     swapchain_.create(context, window);

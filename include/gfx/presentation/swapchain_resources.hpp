@@ -1,9 +1,9 @@
-#ifndef SWAPCHAIN_CONTEXT_HPP
-#define SWAPCHAIN_CONTEXT_HPP
+#ifndef SWAPCHAIN_RESOURCES_HPP
+#define SWAPCHAIN_RESOURCES_HPP
 
-#include "gfx/vulkan/swapchain.hpp"
-#include "gfx/vulkan/render_pass.hpp"
-#include "gfx/vulkan/framebuffer.hpp"
+#include "gfx/presentation/swapchain.hpp"
+#include "gfx/presentation/render_pass.hpp"
+#include "gfx/presentation/framebuffer.hpp"
 
 class SwapchainResources {
 public:
@@ -13,17 +13,17 @@ public:
     auto create(const Context& context, const Window& window) -> void;
     
     // return the const reference of the swapchain
-    auto get_swapchain() const -> const Swapchain& {
+    auto swapchain() const -> const Swapchain& {
         return swapchain_;
     }
 
     // return the const reference of the render pass
-    auto get_render_pass() const -> const RenderPass& {
+    auto render_pass() const -> const RenderPass& {
         return render_pass_;
     }
 
     // return the const reference of the framebuffers
-    auto get_framebuffers() const -> const std::vector<Framebuffer>& {
+    auto framebuffers() const -> const std::vector<Framebuffer>& {
         return framebuffers_;
     }
 

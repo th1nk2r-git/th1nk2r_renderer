@@ -4,8 +4,8 @@
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 
 #include "platform/window.hpp"
-#include "gfx/vulkan/instance.hpp"
-#include "gfx/vulkan/surface.hpp"
+#include "gfx/core/instance.hpp"
+#include "gfx/core/surface.hpp"
 
 class Device {
 public:
