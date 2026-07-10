@@ -1,16 +1,16 @@
-#ifndef SWAPCHAIN_RESOURCES_HPP
-#define SWAPCHAIN_RESOURCES_HPP
+#ifndef SWAPCHAIN_CONTEXT_HPP
+#define SWAPCHAIN_CONTEXT_HPP
 
-#include "gfx/presentation/swapchain.hpp"
-#include "gfx/presentation/render_pass.hpp"
-#include "gfx/presentation/framebuffer.hpp"
+#include "gfx/swapchain/swapchain.hpp"
+#include "gfx/swapchain/render_pass.hpp"
+#include "gfx/swapchain/framebuffer.hpp"
 
-class SwapchainResources {
+class SwapchainContext {
 public:
-    SwapchainResources() = default;
+    SwapchainContext() = default;
 
     // create the swapchain resources
-    auto create(const Context& context, const Window& window) -> void;
+    auto create(const DeviceContext& context, const Window& window) -> void;
     
     // return the const reference of the swapchain
     auto swapchain() const -> const Swapchain& {

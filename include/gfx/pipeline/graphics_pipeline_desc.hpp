@@ -6,7 +6,7 @@
 
 #include "gfx/pipeline/pipeline_layout.hpp"
 #include "gfx/pipeline/shader_module.hpp"
-#include "gfx/presentation/render_pass.hpp"
+#include "gfx/swapchain/render_pass.hpp"
 
 struct GraphicsPipelineDesc {
     const ShaderModule* vertex_shader = nullptr;

@@ -1,4 +1,4 @@
-#include "gfx/presentation/render_pass.hpp"
+#include "gfx/swapchain/render_pass.hpp"
 
 RenderPass::RenderPass(const Device& device, const vk::Format& color_format) {
     vk::AttachmentDescription color_attachment{};

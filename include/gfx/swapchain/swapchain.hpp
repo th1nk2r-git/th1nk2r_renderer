@@ -1,16 +1,16 @@
 #ifndef SWAPCHAIN_HPP
 #define SWAPCHAIN_HPP
 
-#include "gfx/core/context.hpp"
+#include "gfx/core/device_context.hpp"
 #include "gfx/core/surface.hpp"
-#include "gfx/presentation/image_view.hpp"
+#include "gfx/swapchain/image_view.hpp"
 
 class Swapchain {
 public:
     Swapchain() = default;
 
     // create the swapchain
-    auto create(const Context& context, const Window& window) -> void;
+    auto create(const DeviceContext& context, const Window& window) -> void;
 
     // create the swapchain image views
     auto create_image_views(const Device& device) -> void;

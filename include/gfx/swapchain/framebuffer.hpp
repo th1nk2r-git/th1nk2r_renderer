@@ -2,8 +2,8 @@
 #define FRAMEBUFFER_HPP
 
 #include "gfx/core/device.hpp"
-#include "gfx/presentation/image_view.hpp"
-#include "gfx/presentation/render_pass.hpp"
+#include "gfx/swapchain/image_view.hpp"
+#include "gfx/swapchain/render_pass.hpp"
 #include <span>
 
 class Framebuffer {

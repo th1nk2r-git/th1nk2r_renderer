@@ -1,4 +1,4 @@
-#include "gfx/presentation/image_view.hpp"
+#include "gfx/swapchain/image_view.hpp"
 
 ImageView::ImageView(
     const Device& device,

@@ -2,8 +2,8 @@
 #define RENDERER
 
 #include "platform/window.hpp"
-#include "gfx/core/context.hpp"
-#include "gfx/presentation/swapchain_resources.hpp"
+#include "gfx/core/device_context.hpp"
+#include "gfx/swapchain/swapchain_context.hpp"
 
 class Renderer {
 public:
@@ -11,13 +11,13 @@ public:
     
     // create the renderer
     auto create(const Window& window) -> void {
-        context_.create(window);
-        swapchain_resources_.create(context_, window);
+        device_context_.create(window);
+        swapchain_context_.create(device_context_, window);
     }
 
 private:
-    Context context_;
-    SwapchainResources swapchain_resources_;
+    DeviceContext device_context_;
+    SwapchainContext swapchain_context_;
 };
 
 #endif

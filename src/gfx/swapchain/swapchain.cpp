@@ -1,4 +1,4 @@
-#include "gfx/presentation/swapchain.hpp"
+#include "gfx/swapchain/swapchain.hpp"
 
 auto Swapchain::choose_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_surface_formats) -> vk::SurfaceFormatKHR {
     for (const auto& surface_format : available_surface_formats) {
@@ -33,7 +33,7 @@ auto Swapchain::choose_extent(const vk::SurfaceCapabilitiesKHR& capabilities, co
     return actual_extent;
 }
 
-auto Swapchain::create(const Context& context, const Window& window) -> void {
+auto Swapchain::create(const DeviceContext& context, const Window& window) -> void {
     auto available_surface_formats = context.surface().query_formats(
         context.device().physical_device()
     );

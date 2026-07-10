@@ -1,6 +1,6 @@
-#include "gfx/presentation/swapchain_resources.hpp"
+#include "gfx/swapchain/swapchain_context.hpp"
 
-auto SwapchainResources::create(const Context& context, const Window& window) -> void {
+auto SwapchainContext::create(const DeviceContext& context, const Window& window) -> void {
     swapchain_.create(context, window);
     swapchain_.create_image_views(context.device());
     render_pass_ = RenderPass(
@@ -13,7 +13,7 @@ auto SwapchainResources::create(const Context& context, const Window& window) ->
     );
 }
 
-auto SwapchainResources::create_framebuffers(const Device& device) -> void {
+auto SwapchainContext::create_framebuffers(const Device& device) -> void {
     framebuffers_.clear();
 
     const auto& swapchain_views = swapchain_.swapchain_image_views();

@@ -1,14 +1,14 @@
-#ifndef CONTEXT_HPP
-#define CONTEXT_HPP
+#ifndef DEVICE_CONTEXT_HPP
+#define DEVICE_CONTEXT_HPP
 
 #include "platform/window.hpp"
 #include "gfx/core/instance.hpp"
 #include "gfx/core/surface.hpp"
 #include "gfx/core/device.hpp"
 
-class Context {
+class DeviceContext {
 public:
-    Context() = default;
+    DeviceContext() = default;
 
     // create the vulkan context
     auto create(const Window& window) -> void {

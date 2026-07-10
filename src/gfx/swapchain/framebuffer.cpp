@@ -1,4 +1,4 @@
-#include "gfx/presentation/framebuffer.hpp"
+#include "gfx/swapchain/framebuffer.hpp"
 
 Framebuffer::Framebuffer(const Device& device, const RenderPass& render_pass, std::span<const ImageView* const> attachments, vk::Extent2D extent) {
     std::vector<vk::ImageView> native_views;
