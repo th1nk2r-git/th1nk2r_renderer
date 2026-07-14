@@ -16,5 +16,6 @@ Framebuffer::Framebuffer(const Device& device, const RenderPass& render_pass, st
             .setPAttachments(native_views.data())
             .setWidth(extent.width)
             .setHeight(extent.height)
-            .setLayers(1));
+            .setLayers(1)
+    );
 }

@@ -23,12 +23,10 @@ auto Renderer::create_main_pipeline() -> void {
     const auto& device = device_context_.device();
     const ShaderModule vertex_shader{
         device,
-        "./spv/vertex.spv"
-    };
+        "./spv/vertex.spv"};
     const ShaderModule fragment_shader{
         device,
-        "./spv/fragment.spv"
-    };
+        "./spv/fragment.spv"};
 
     vk::VertexInputBindingDescription vertex_binding{};
     vertex_binding
@@ -58,8 +56,7 @@ auto Renderer::create_main_pipeline() -> void {
     pipeline_desc.vertex_bindings.push_back(vertex_binding);
     pipeline_desc.vertex_attributes = {
         position_attribute,
-        color_attribute
-    };
+        color_attribute};
 
     main_pipeline_ = GraphicsPipeline(device, pipeline_desc);
 }
@@ -76,6 +73,20 @@ auto Renderer::render() -> void {
     image_id = acquire_result.value;
     swapchain_suboptimal = acquire_result.result == vk::Result::eSuboptimalKHR;
 
+    record(image_id);
+    submit(image_id);
+    const auto present_result = present(image_id);
+
+    frame_context_.advance();
+
+    if (swapchain_suboptimal ||
+        present_result == vk::Result::eSuboptimalKHR ||
+        present_result == vk::Result::eErrorOutOfDateKHR) {
+        throw vk::OutOfDateKHRError("swapchain recreation required!");
+    }
+}
+
+auto Renderer::record(uint32_t image_id) -> void {
     auto cmd = [&](vk::raii::CommandBuffer& buffer) {
         vk::ClearValue clear_value{};
         clear_value.color.float32[0] = 0.02F;
@@ -87,20 +98,17 @@ auto Renderer::render() -> void {
         render_pass_info
             .setRenderPass(swapchain_context_.render_pass().get())
             .setFramebuffer(swapchain_context_.framebuffers().at(image_id).get())
-            .setRenderArea({
-                .offset = {0, 0},
-                .extent = swapchain_context_.swapchain().swapchain_image_extent()
-            })
+            .setRenderArea({.offset = {0, 0},
+                            .extent = swapchain_context_.swapchain().swapchain_image_extent()})
             .setClearValues(clear_value);
 
         buffer.beginRenderPass(
             render_pass_info,
-            vk::SubpassContents::eInline
-        );
+            vk::SubpassContents::eInline);
 
         const auto extent = swapchain_context_
-            .swapchain()
-            .swapchain_image_extent();
+                                .swapchain()
+                                .swapchain_image_extent();
 
         vk::Viewport viewport{};
         viewport
@@ -120,25 +128,13 @@ auto Renderer::render() -> void {
         buffer.setScissor(0, scissor);
         buffer.bindPipeline(
             vk::PipelineBindPoint::eGraphics,
-            main_pipeline_.get()
-        );
+            main_pipeline_.get());
 
         buffer.draw(3, 1, 0, 0);
         buffer.endRenderPass();
     };
 
     frame_context_.current_command_context().record(cmd);
-
-    submit(image_id);
-    const auto present_result = present(image_id);
-
-    frame_context_.advance();
-
-    if (swapchain_suboptimal ||
-        present_result == vk::Result::eSuboptimalKHR ||
-        present_result == vk::Result::eErrorOutOfDateKHR) {
-        throw vk::OutOfDateKHRError("swapchain recreation required!");
-    }
 }
 
 auto Renderer::submit(uint32_t image_id) -> void {
@@ -146,11 +142,10 @@ auto Renderer::submit(uint32_t image_id) -> void {
 
     const auto wait_semaphore = *frame_context_.current_image_available();
     const auto wait_stage = vk::PipelineStageFlags{
-        vk::PipelineStageFlagBits::eColorAttachmentOutput
-    };
+        vk::PipelineStageFlagBits::eColorAttachmentOutput};
     const auto command_buffer = *frame_context_
-        .current_command_context()
-        .command_buffers()[0];
+                                     .current_command_context()
+                                     .command_buffers()[0];
     const auto signal_semaphore = *frame_context_.render_finished(image_id);
 
     vk::SubmitInfo submit_info{};
@@ -159,12 +154,11 @@ auto Renderer::submit(uint32_t image_id) -> void {
         .setWaitDstStageMask(wait_stage)
         .setCommandBuffers(command_buffer)
         .setSignalSemaphores(signal_semaphore);
-        
+
     frame_context_.reset(device);
     device.graphics_queue().submit(
         submit_info,
-        frame_context_.current_in_flight_fence()
-    );
+        frame_context_.current_in_flight_fence());
 }
 
 auto Renderer::present(uint32_t image_id) -> vk::Result {
@@ -179,18 +173,17 @@ auto Renderer::present(uint32_t image_id) -> vk::Result {
 
     try {
         const auto result = device_context_.device()
-            .present_queue()
-            .presentKHR(present_info);
+                                .present_queue()
+                                .presentKHR(present_info);
 
         if (result != vk::Result::eSuccess &&
             result != vk::Result::eSuboptimalKHR &&
             result != vk::Result::eErrorOutOfDateKHR) {
-            throw std::runtime_error("failed to present swapchain image");
+            throw std::runtime_error("failed to present swapchain image!");
         }
 
         return result;
-    }
-    catch (const vk::OutOfDateKHRError&) {
+    } catch (const vk::OutOfDateKHRError&) {
         return vk::Result::eErrorOutOfDateKHR;
     }
 }
@@ -218,11 +211,9 @@ auto Renderer::recreate_swapchain(const Window& window) -> void {
     swapchain_context_.create(
         device_context_,
         window,
-        old_swapchain
-    );
+        old_swapchain);
     create_main_pipeline();
     frame_context_.recreate_swapchain_resources(
         device,
-        swapchain_context_
-    );
+        swapchain_context_);
 }

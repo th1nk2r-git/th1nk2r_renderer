@@ -36,6 +36,9 @@ private:
     // create the default graphics pipeline
     auto create_main_pipeline() -> void;
 
+    // recourd the command
+    auto record(uint32_t image_id) -> void;
+
     // submit the command
     auto submit(uint32_t image_id) -> void;
 
