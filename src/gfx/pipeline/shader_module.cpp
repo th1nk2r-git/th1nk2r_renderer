@@ -14,7 +14,7 @@ ShaderModule::ShaderModule(const Device& device, const std::filesystem::path& pa
 
 
 auto ShaderModule::load_spirv(const std::filesystem::path& path) -> std::vector<char> {
-    std::fstream file(path, std::ios::ate | std::ios::binary);
+    std::fstream file(path, std::ios::ate | std::ios::binary | std::ios::in);
     size_t file_size = file.tellg();
     file.seekg(0);
     std::vector<char> buffer(file_size);

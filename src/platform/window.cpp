@@ -21,6 +21,20 @@ auto Window::create(uint16_t width, uint16_t height) -> void {
         glfwTerminate();
         throw std::runtime_error("failed to create the window!");
     }
+
+    glfwSetWindowUserPointer(handle_, this);
+    glfwSetFramebufferSizeCallback(handle_, framebuffer_size_callback);
+}
+
+auto Window::framebuffer_size_callback(
+    GLFWwindow* window,
+    int,
+    int
+) -> void {
+    auto* self = static_cast<Window*>(glfwGetWindowUserPointer(window));
+    if (self != nullptr) {
+        self->framebuffer_resized_ = true;
+    }
 }
 
 Window::~Window() {

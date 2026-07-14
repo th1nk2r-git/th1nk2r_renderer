@@ -6,7 +6,7 @@ auto Instance::create() -> void {
     constexpr vk::ApplicationInfo app_info {
         .pApplicationName   = "th1nk2r renderer",
         .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-        .pEngineName        = "no engine",
+        .pEngineName        = "th1nk2r engine",
         .engineVersion      = VK_MAKE_VERSION(1, 0, 0),
         .apiVersion         = vk::ApiVersion14
     };

@@ -29,8 +29,18 @@ public:
         return handle_;
     }
 
+    // return and clear the framebuffer resize flag.
+    auto consume_framebuffer_resized() -> bool {
+        const bool resized = framebuffer_resized_;
+        framebuffer_resized_ = false;
+        return resized;
+    }
+
 private:
     GLFWwindow* handle_ = nullptr;
+    bool framebuffer_resized_ = false;
+
+    static auto framebuffer_size_callback(GLFWwindow* window, int width, int height) -> void;
 };
 
 #endif

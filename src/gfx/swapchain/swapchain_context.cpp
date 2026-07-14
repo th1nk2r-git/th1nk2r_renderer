@@ -1,7 +1,13 @@
 #include "gfx/swapchain/swapchain_context.hpp"
 
-auto SwapchainContext::create(const DeviceContext& context, const Window& window) -> void {
-    swapchain_.create(context, window);
+#include <limits>
+
+auto SwapchainContext::create(
+    const DeviceContext& context,
+    const Window& window,
+    vk::SwapchainKHR old_swapchain
+) -> void {
+    swapchain_.create(context, window, old_swapchain);
     swapchain_.create_image_views(context.device());
     render_pass_ = RenderPass(
         context.device(),
@@ -34,4 +40,12 @@ auto SwapchainContext::create_framebuffers(const Device& device) -> void {
             swapchain_.swapchain_image_extent()
         );
     }
+}
+
+auto SwapchainContext::acquire(const vk::raii::Semaphore& image_available) const
+    -> vk::ResultValue<uint32_t> {
+    return swapchain_.get().acquireNextImage(
+        std::numeric_limits<uint64_t>::max(),
+        *image_available
+    );
 }

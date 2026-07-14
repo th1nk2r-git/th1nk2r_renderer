@@ -10,7 +10,11 @@ public:
     SwapchainContext() = default;
 
     // create the swapchain resources
-    auto create(const DeviceContext& context, const Window& window) -> void;
+    auto create(
+        const DeviceContext& context,
+        const Window& window,
+        vk::SwapchainKHR old_swapchain = nullptr
+    ) -> void;
     
     // return the const reference of the swapchain
     auto swapchain() const -> const Swapchain& {
@@ -26,6 +30,10 @@ public:
     auto framebuffers() const -> const std::vector<Framebuffer>& {
         return framebuffers_;
     }
+
+    // acquire the next image
+    auto acquire(const vk::raii::Semaphore& image_available) const
+        -> vk::ResultValue<uint32_t>;
 
 private:
     Swapchain swapchain_;

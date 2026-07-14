@@ -9,18 +9,10 @@ public:
     Application() = default;
     
     // composition root
-    auto init() -> void {
-        window_.create(1200, 800);
-        renderer_.create(window_);
-    }
+    auto init() -> void;
 
     // entry point of the application
-    auto run() -> void {
-    while (!window_.should_close()) {
-        window_.poll_events();
-        // to be continued......
-    }
-}
+    auto run() -> void;
 
 private:
     Window window_;

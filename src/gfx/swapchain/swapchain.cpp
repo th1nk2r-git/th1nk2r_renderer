@@ -33,7 +33,11 @@ auto Swapchain::choose_extent(const vk::SurfaceCapabilitiesKHR& capabilities, co
     return actual_extent;
 }
 
-auto Swapchain::create(const DeviceContext& context, const Window& window) -> void {
+auto Swapchain::create(
+    const DeviceContext& context,
+    const Window& window,
+    vk::SwapchainKHR old_swapchain
+) -> void {
     auto available_surface_formats = context.surface().query_formats(
         context.device().physical_device()
     );
@@ -86,7 +90,7 @@ auto Swapchain::create(const DeviceContext& context, const Window& window) -> vo
     create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
     create_info.presentMode = present_mode;
     create_info.clipped = true;
-    create_info.oldSwapchain = nullptr;
+    create_info.oldSwapchain = old_swapchain;
     this->handle_ = context.device().logical_device().createSwapchainKHR(create_info);
 
     this->swapchain_images_ = handle_.getImages();

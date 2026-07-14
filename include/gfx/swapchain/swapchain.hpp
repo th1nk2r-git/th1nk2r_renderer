@@ -10,7 +10,11 @@ public:
     Swapchain() = default;
 
     // create the swapchain
-    auto create(const DeviceContext& context, const Window& window) -> void;
+    auto create(
+        const DeviceContext& context,
+        const Window& window,
+        vk::SwapchainKHR old_swapchain = nullptr
+    ) -> void;
 
     // create the swapchain image views
     auto create_image_views(const Device& device) -> void;
