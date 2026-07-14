@@ -9,6 +9,11 @@ class Window {
 public:
     Window() = default;
 
+    Window(const Window&) = delete;
+    Window& operator = (const Window&) = delete;
+    Window(Window&&) = default;
+    Window& operator = (Window&&) = default;
+
     ~Window();
 
     // create the window

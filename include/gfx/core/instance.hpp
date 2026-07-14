@@ -5,6 +5,7 @@
 
 #include <vulkan/vulkan_raii.hpp>
 #include <optional>
+#include <vector>
 
 class Instance {
 public:
@@ -24,6 +25,7 @@ private:
     vk::raii::Context dispatcher;
 
     vk::raii::Instance handle_ = nullptr;
+    vk::raii::DebugUtilsMessengerEXT debug_messenger_ = nullptr;
 
 #ifdef NDEBUG
     bool validation_layers_enabled = false;

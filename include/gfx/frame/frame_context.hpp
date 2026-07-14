@@ -41,7 +41,7 @@ public:
     // wait for the fence of the current frame
     auto wait(const Device& device) -> void;
 
-    // reset the fence and the command buffer
+    // reset the fence
     auto reset(const Device& device) -> void;
 
     // move to the next frame
