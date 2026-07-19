@@ -2,7 +2,7 @@
 #define RENDERER
 
 #include "platform/window.hpp"
-#include "gfx/core/device_context.hpp"
+#include "gfx/device/device_context.hpp"
 #include "gfx/swapchain/swapchain_context.hpp"
 #include "gfx/pipeline/graphics_pipeline.hpp"
 #include "gfx/frame/frame_context.hpp"

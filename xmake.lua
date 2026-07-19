@@ -5,14 +5,14 @@ set_toolchains("msvc")
 
 add_rules("mode.debug", "mode.release")
 
-add_requires("vulkansdk", "glfw", "glm")
+add_requires("vulkansdk", "glfw", "glm", "vulkan-memory-allocator")
 
 target("application")
     set_kind("binary")
     set_targetdir("bin")
     add_files("src/**.cpp")
     add_includedirs("./include")
-    add_packages("vulkansdk", "glfw", "glm")
+    add_packages("vulkansdk", "glfw", "glm", "vulkan-memory-allocator")
 
     after_build(function (target)
         local shader_dir = os.projectdir() .. "/shaders"

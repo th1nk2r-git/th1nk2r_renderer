@@ -2,20 +2,17 @@
 #define DEVICE_CONTEXT_HPP
 
 #include "platform/window.hpp"
-#include "gfx/core/instance.hpp"
-#include "gfx/core/surface.hpp"
-#include "gfx/core/device.hpp"
+#include "gfx/device/instance.hpp"
+#include "gfx/device/surface.hpp"
+#include "gfx/device/device.hpp"
+#include "gfx/device/gpu_allocator.hpp"
 
 class DeviceContext {
 public:
     DeviceContext() = default;
 
     // create the vulkan context
-    auto create(const Window& window) -> void {
-        instance_.create();
-        surface_.create(instance_, window);
-        device_.create(instance_, surface_);
-    }
+    auto create(const Window& window) -> void;
 
     // return the reference of the instance
     auto instance() const -> const Instance& {
@@ -36,6 +33,7 @@ private:
     Instance instance_;
     Surface surface_;
     Device device_;
+    GpuAllocator allocator_;
 };
 
 #endif

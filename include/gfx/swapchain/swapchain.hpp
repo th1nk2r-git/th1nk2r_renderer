@@ -1,8 +1,8 @@
 #ifndef SWAPCHAIN_HPP
 #define SWAPCHAIN_HPP
 
-#include "gfx/core/device_context.hpp"
-#include "gfx/core/surface.hpp"
+#include "gfx/device/device_context.hpp"
+#include "gfx/device/surface.hpp"
 #include "gfx/swapchain/image_view.hpp"
 
 class Swapchain {
@@ -10,11 +10,7 @@ public:
     Swapchain() = default;
 
     // create the swapchain
-    auto create(
-        const DeviceContext& context,
-        const Window& window,
-        vk::SwapchainKHR old_swapchain = nullptr
-    ) -> void;
+    auto create(const DeviceContext& context, const Window& window, vk::SwapchainKHR old_swapchain = nullptr) -> void;
 
     // create the swapchain image views
     auto create_image_views(const Device& device) -> void;

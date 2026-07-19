@@ -1,7 +1,7 @@
 #ifndef FRAMEBUFFER_HPP
 #define FRAMEBUFFER_HPP
 
-#include "gfx/core/device.hpp"
+#include "gfx/device/device.hpp"
 #include "gfx/swapchain/image_view.hpp"
 #include "gfx/swapchain/render_pass.hpp"
 #include <span>

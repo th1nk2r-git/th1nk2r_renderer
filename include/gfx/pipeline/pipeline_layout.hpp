@@ -1,7 +1,7 @@
 #ifndef PIPELINE_LAYOUT_HPP
 #define PIPELINE_LAYOUT_HPP
 
-#include "gfx/core/device.hpp"
+#include "gfx/device/device.hpp"
 
 class PipelineLayout {
 public:

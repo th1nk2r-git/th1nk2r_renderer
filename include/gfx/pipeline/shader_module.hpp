@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <vector>
 
-#include "gfx/core/device.hpp"
+#include "gfx/device/device.hpp"
 
 class ShaderModule {
 public:

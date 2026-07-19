@@ -80,7 +80,7 @@ th1nk2r_renderer/
 ├─ include/                   # 公共头文件
 │  ├─ core/                   # 应用生命周期
 │  ├─ gfx/
-│  │  ├─ core/                # Vulkan 实例、Surface、设备
+│  │  ├─ device/              # Vulkan 实例、Surface、设备
 │  │  ├─ frame/               # 帧资源与同步
 │  │  ├─ pipeline/            # 着色器模块与图形管线
 │  │  └─ swapchain/           # 交换链及其相关资源

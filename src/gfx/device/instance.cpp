@@ -1,4 +1,4 @@
-#include "gfx/core/instance.hpp"
+#include "gfx/device/instance.hpp"
 #include <GLFW/glfw3.h>
 
 #include <cstring>

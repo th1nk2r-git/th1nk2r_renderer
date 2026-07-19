@@ -1,7 +1,7 @@
 #ifndef SURFACE_HPP
 #define SURFACE_HPP
 
-#include "gfx/core/instance.hpp"
+#include "gfx/device/instance.hpp"
 #include "platform/window.hpp"
 
 class Surface {

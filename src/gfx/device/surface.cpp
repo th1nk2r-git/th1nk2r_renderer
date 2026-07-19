@@ -1,4 +1,4 @@
-#include "gfx/core/surface.hpp"
+#include "gfx/device/surface.hpp"
 
 auto Surface::create(const Instance& instance, const Window& window) -> void {
     VkSurfaceKHR raw_handle;

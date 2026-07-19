@@ -3,7 +3,7 @@
 
 #include <utility>
 
-#include "gfx/core/device.hpp"
+#include "gfx/device/device.hpp"
 
 class CommandContext {
 public:

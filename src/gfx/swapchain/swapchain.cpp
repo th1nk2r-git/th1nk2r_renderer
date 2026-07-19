@@ -104,8 +104,10 @@ auto Swapchain::create_image_views(const Device& device) -> void {
     for (const auto& image : swapchain_images_) {
         swapchain_image_views_.emplace_back(
             device,
-            image,
-            swapchain_image_format_
+            ImageViewDesc{
+                .image = image,
+                .format = swapchain_image_format_
+            }
         );
     }
 }

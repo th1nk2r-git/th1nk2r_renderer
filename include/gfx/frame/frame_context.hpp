@@ -4,7 +4,7 @@
 #include <vector>
 #include <array>
 
-#include "gfx/core/device_context.hpp"
+#include "gfx/device/device_context.hpp"
 #include "gfx/swapchain/swapchain_context.hpp"
 #include "gfx/command/command_context.hpp"
 

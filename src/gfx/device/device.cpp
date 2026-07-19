@@ -1,7 +1,7 @@
 #include <optional>
 #include <set>
 
-#include "gfx/core/device.hpp"
+#include "gfx/device/device.hpp"
 
 auto Device::pick_physical_device(const Instance& instance, const Surface& surface) -> void {
     auto physical_devices = instance.get().enumeratePhysicalDevices();
