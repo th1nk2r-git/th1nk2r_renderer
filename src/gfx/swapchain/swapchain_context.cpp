@@ -2,11 +2,7 @@
 
 #include <limits>
 
-auto SwapchainContext::create(
-    const DeviceContext& context,
-    const Window& window,
-    vk::SwapchainKHR old_swapchain
-) -> void {
+auto SwapchainContext::create(const DeviceContext& context, const Window& window, vk::SwapchainKHR old_swapchain) -> void {
     swapchain_.create(context, window, old_swapchain);
     swapchain_.create_image_views(context.device());
     render_pass_ = RenderPass(

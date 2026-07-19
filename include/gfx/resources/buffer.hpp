@@ -32,7 +32,14 @@ public:
     Buffer(Buffer&& other) noexcept;
     auto operator=(Buffer&& other) noexcept -> Buffer&;
 
-    auto get() const noexcept -> vk::Buffer;
+    auto get() const noexcept -> vk::Buffer {
+        return vk::Buffer{handle_};
+    }
+
+    auto size() const noexcept -> vk::DeviceSize {
+        return size_;
+    }
+
     auto write(const void* data, vk::DeviceSize size, vk::DeviceSize offset = 0) -> void;
 
 private:

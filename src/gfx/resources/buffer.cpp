@@ -129,10 +129,6 @@ auto Buffer::operator=(Buffer&& other) noexcept -> Buffer& {
     return *this;
 }
 
-auto Buffer::get() const noexcept -> vk::Buffer {
-    return vk::Buffer{handle_};
-}
-
 auto Buffer::write(const void* data, vk::DeviceSize size,vk::DeviceSize offset) -> void {
     if (size == 0) {
         return;

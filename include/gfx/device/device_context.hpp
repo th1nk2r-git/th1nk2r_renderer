@@ -29,6 +29,11 @@ public:
         return device_;
     }
 
+    // return the reference of the allocator
+    auto allocator() const -> const GpuAllocator& {
+        return allocator_;
+    }
+
 private:
     Instance instance_;
     Surface surface_;

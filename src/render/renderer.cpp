@@ -1,32 +1,34 @@
 #include "render/renderer.hpp"
 
+#include <array>
 #include <cstddef>
 #include <filesystem>
 #include <stdexcept>
 #include <utility>
 
-struct Vertex {
-    float position[2];
-    float color[3];
-};
-
 auto Renderer::create(const Window& window) -> void {
     device_context_.create(window);
+    data_uploader_ = DataUploader(
+        device_context_.device(),
+        device_context_.allocator()
+    );
     swapchain_context_.create(device_context_, window);
     frame_context_.create(device_context_, swapchain_context_);
-
     main_pipeline_layout_ = PipelineLayout(device_context_.device());
     create_main_pipeline();
+    create_buffers();
 }
 
 auto Renderer::create_main_pipeline() -> void {
     const auto& device = device_context_.device();
     const ShaderModule vertex_shader{
         device,
-        "./spv/vertex.spv"};
+        "./spv/vertex.spv"
+    };
     const ShaderModule fragment_shader{
         device,
-        "./spv/fragment.spv"};
+        "./spv/fragment.spv"
+    };
 
     vk::VertexInputBindingDescription vertex_binding{};
     vertex_binding
@@ -56,9 +58,52 @@ auto Renderer::create_main_pipeline() -> void {
     pipeline_desc.vertex_bindings.push_back(vertex_binding);
     pipeline_desc.vertex_attributes = {
         position_attribute,
-        color_attribute};
+        color_attribute
+    };
 
     main_pipeline_ = GraphicsPipeline(device, pipeline_desc);
+}
+
+auto Renderer::create_buffers() -> void {
+    const vk::DeviceSize vertices_size = sizeof(Vertex) * vertices_.size();
+
+    const vk::DeviceSize indices_size  = sizeof(uint16_t) * indices_.size();
+
+    vertex_buffer_ = Buffer {
+        device_context_.allocator(),
+        BufferDesc{
+            .size = vertices_size,
+            .usage = vk::BufferUsageFlagBits::eVertexBuffer |
+                     vk::BufferUsageFlagBits::eTransferDst,
+            .memory = BufferMemoryUsage::GpuOnly
+        }
+    };
+
+    index_buffer_ = Buffer {
+        device_context_.allocator(),
+        BufferDesc{
+            .size = indices_size,
+            .usage = vk::BufferUsageFlagBits::eIndexBuffer |
+                     vk::BufferUsageFlagBits::eTransferDst,
+            .memory = BufferMemoryUsage::GpuOnly
+        }
+    };
+
+    data_uploader_.enqueue(
+        vertices_.data(),
+        vertices_size,
+        vertex_buffer_,
+        vk::PipelineStageFlagBits::eVertexInput,
+        vk::AccessFlagBits::eVertexAttributeRead
+    );
+    data_uploader_.enqueue(
+        indices_.data(),
+        indices_size,
+        index_buffer_,
+        vk::PipelineStageFlagBits::eVertexInput,
+        vk::AccessFlagBits::eIndexRead
+    );
+    data_uploader_.submit_and_wait();
 }
 
 auto Renderer::render() -> void {
@@ -87,7 +132,7 @@ auto Renderer::render() -> void {
 }
 
 auto Renderer::record(uint32_t image_id) -> void {
-    auto cmd = [&](vk::raii::CommandBuffer& buffer) {
+    auto cmd = [&](vk::raii::CommandBuffer& cmd) {
         vk::ClearValue clear_value{};
         clear_value.color.float32[0] = 0.02F;
         clear_value.color.float32[1] = 0.02F;
@@ -102,7 +147,7 @@ auto Renderer::record(uint32_t image_id) -> void {
                             .extent = swapchain_context_.swapchain().swapchain_image_extent()})
             .setClearValues(clear_value);
 
-        buffer.beginRenderPass(
+        cmd.beginRenderPass(
             render_pass_info,
             vk::SubpassContents::eInline);
 
@@ -124,14 +169,24 @@ auto Renderer::record(uint32_t image_id) -> void {
             .setOffset({0, 0})
             .setExtent(extent);
 
-        buffer.setViewport(0, viewport);
-        buffer.setScissor(0, scissor);
-        buffer.bindPipeline(
+        cmd.setViewport(0, viewport);
+        cmd.setScissor(0, scissor);
+        cmd.bindPipeline(
             vk::PipelineBindPoint::eGraphics,
-            main_pipeline_.get());
+            main_pipeline_.get()
+        );
 
-        buffer.draw(3, 1, 0, 0);
-        buffer.endRenderPass();
+        const std::array vertex_buffers {
+            vertex_buffer_.get()
+        };
+
+        constexpr std::array<vk::DeviceSize, 1> offsets{0};
+
+        cmd.bindVertexBuffers(0, vertex_buffers, offsets);
+        cmd.bindIndexBuffer(index_buffer_.get(), 0, vk::IndexType::eUint16);
+
+        cmd.drawIndexed(indices_.size(), 1, 0, 0, 0);
+        cmd.endRenderPass();
     };
 
     frame_context_.current_command_context().record(cmd);
@@ -183,7 +238,8 @@ auto Renderer::present(uint32_t image_id) -> vk::Result {
         }
 
         return result;
-    } catch (const vk::OutOfDateKHRError&) {
+    }
+    catch (const vk::OutOfDateKHRError&) {
         return vk::Result::eErrorOutOfDateKHR;
     }
 }
@@ -211,9 +267,11 @@ auto Renderer::recreate_swapchain(const Window& window) -> void {
     swapchain_context_.create(
         device_context_,
         window,
-        old_swapchain);
+        old_swapchain
+    );
     create_main_pipeline();
     frame_context_.recreate_swapchain_resources(
         device,
-        swapchain_context_);
+        swapchain_context_
+    );
 }
