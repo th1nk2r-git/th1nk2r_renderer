@@ -1,5 +1,5 @@
-#ifndef CAMERA_CONTEXT_HPP
-#define CAMERA_CONTEXT_HPP
+#ifndef UNIFORMS_CONTEXT_HPP
+#define UNIFORMS_CONTEXT_HPP
 
 #include <vector>
 
@@ -9,14 +9,15 @@
 #include "gfx/resources/buffer.hpp"
 #include <glm/mat4x4.hpp>
 
-struct alignas(16) CameraUniforms {
+struct alignas(16) UniformBufferObject {
+    glm::mat4 model {1.0F};
     glm::mat4 view {1.0F};
     glm::mat4 projection {1.0F};
 };
 
-class CameraUniformsContext {
+class UniformsContext {
 public:
-    CameraUniformsContext(
+    UniformsContext(
         const Device& device,
         const GpuAllocator& allocator,
         DescriptorPool& descriptor_pool,
@@ -24,14 +25,14 @@ public:
         const FrameContext& frame_context
     );
 
-    CameraUniformsContext(const CameraUniformsContext&) = delete;
-    auto operator=(const CameraUniformsContext&) -> CameraUniformsContext& = delete;
+    UniformsContext(const UniformsContext&) = delete;
+    auto operator=(const UniformsContext&) -> UniformsContext& = delete;
 
-    CameraUniformsContext(CameraUniformsContext&&) = delete;
-    auto operator=(CameraUniformsContext&&) -> CameraUniformsContext& = delete;
+    UniformsContext(UniformsContext&&) = delete;
+    auto operator=(UniformsContext&&) -> UniformsContext& = delete;
 
     // update the uniforms belonging to the current frame in flight
-    auto update(const CameraUniforms& uniforms) -> void;
+    auto update(const UniformBufferObject& uniforms) -> void;
 
     // return the uniform buffer belonging to the current frame in flight
     auto current_uniform_buffer() const -> const Buffer& {

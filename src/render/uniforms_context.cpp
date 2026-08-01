@@ -1,9 +1,9 @@
-#include "render/camera_uniforms_context.hpp"
+#include "render/uniforms_context.hpp"
 
 #include <stdexcept>
 #include <vector>
 
-CameraUniformsContext::CameraUniformsContext(
+UniformsContext::UniformsContext(
     const Device& device,
     const GpuAllocator& allocator,
     DescriptorPool& descriptor_pool,
@@ -23,7 +23,7 @@ CameraUniformsContext::CameraUniformsContext(
         uniform_buffers_.emplace_back(
             allocator,
             BufferDesc{
-                .size = sizeof(CameraUniforms),
+                .size = sizeof(UniformBufferObject),
                 .usage = vk::BufferUsageFlagBits::eUniformBuffer,
                 .memory = BufferMemoryUsage::Upload,
                 .persistent_mapping = true
@@ -45,7 +45,7 @@ CameraUniformsContext::CameraUniformsContext(
     buffer_infos.reserve(frame_count);
     descriptor_writes.reserve(frame_count);
 
-    const CameraUniforms initial_uniforms{};
+    const UniformBufferObject initial_uniforms{};
     for (uint32_t frame_index = 0; frame_index < frame_count; ++frame_index) {
         auto& uniform_buffer = uniform_buffers_[frame_index];
         uniform_buffer.write(&initial_uniforms, sizeof(initial_uniforms));
@@ -54,7 +54,7 @@ CameraUniformsContext::CameraUniformsContext(
         buffer_info
             .setBuffer(uniform_buffer.get())
             .setOffset(0)
-            .setRange(sizeof(CameraUniforms));
+            .setRange(sizeof(UniformBufferObject));
         buffer_infos.push_back(buffer_info);
 
         vk::WriteDescriptorSet descriptor_write{};
@@ -70,7 +70,7 @@ CameraUniformsContext::CameraUniformsContext(
     device.logical_device().updateDescriptorSets(descriptor_writes, {});
 }
 
-auto CameraUniformsContext::update(const CameraUniforms& uniforms) -> void {
+auto UniformsContext::update(const UniformBufferObject& uniforms) -> void {
     const auto frame_index = frame_context_.current_frame_index();
     uniform_buffers_.at(frame_index).write(&uniforms, sizeof(uniforms));
 }

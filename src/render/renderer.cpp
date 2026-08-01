@@ -6,12 +6,15 @@
 #include <memory>
 #include <stdexcept>
 #include <utility>
+#include <chrono>
+#define GLM_FORCE_RADIANS
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace {
     auto create_descriptor_pool(
         const Device& device,
-        uint32_t frame_count
-    ) -> DescriptorPool {
+        uint32_t frame_count) -> DescriptorPool {
         vk::DescriptorPoolSize camera_uniform_pool_size{};
         camera_uniform_pool_size
             .setType(vk::DescriptorType::eUniformBuffer)
@@ -26,26 +29,22 @@ Renderer::Renderer(const Window& window)
     : device_context_(window),
       data_uploader_(
           device_context_.device(),
-          device_context_.allocator()
-      ),
+          device_context_.allocator()),
       swapchain_context_(device_context_, window),
       frame_context_(device_context_.device()),
       descriptor_pool_(
-        create_descriptor_pool(
-          device_context_.device(),
-          frame_context_.frame_count()
-        )),
+          create_descriptor_pool(
+              device_context_.device(),
+              frame_context_.frame_count())),
       main_pipeline_(BasicRenderingPipelineFactory::create(
           device_context_.device(),
-          swapchain_context_.render_pass()
-      )),
-      camera_uniforms_context_(
-        device_context_.device(),
-        device_context_.allocator(),
-        descriptor_pool_,
-        main_pipeline_.descriptor_set_layout(0),
-        frame_context_
-      ) {
+          swapchain_context_.render_pass())),
+      uniforms_context_(
+          device_context_.device(),
+          device_context_.allocator(),
+          descriptor_pool_,
+          main_pipeline_.descriptor_set_layout(0),
+          frame_context_) {
     create_mesh();
 }
 
@@ -61,26 +60,53 @@ auto Renderer::create_mesh() -> void {
         Vertex{{0.4115F, -0.5663F}, {1.0F, 0.0F, 1.0F}},
         Vertex{{0.2542F, -0.0826F}, {1.0F, 0.5F, 0.5F}},
         Vertex{{0.6658F, 0.2163F}, {0.8F, 0.0F, 0.5F}},
-        Vertex{{0.1571F, 0.2162F}, {0.0F, 0.5F, 0.5F}}
-    };
+        Vertex{{0.1571F, 0.2162F}, {0.0F, 0.5F, 0.5F}}};
 
-    mesh_.indices_ = std::vector<uint32_t> {
-        0, 2, 1,
-        0, 3, 2,
-        0, 4, 3,
-        0, 5, 4,
-        0, 6, 5,
-        0, 7, 6,
-        0, 8, 7,
-        0, 9, 8,
-        0, 10, 9,
-        0, 1, 10
-    };
+    mesh_.indices_ = std::vector<uint32_t>{
+        0, 1, 2,
+        0, 2, 3,
+        0, 3, 4,
+        0, 4, 5,
+        0, 5, 6,
+        0, 6, 7,
+        0, 7, 8,
+        0, 8, 9,
+        0, 9, 10,
+        0, 10, 1};
     render_mesh_ = RenderMesh(
         mesh_,
         device_context_.allocator(),
-        data_uploader_
+        data_uploader_);
+}
+
+auto Renderer::update_ubo() -> void {
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    const auto currentTime = std::chrono::high_resolution_clock::now();
+    const float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+    UniformBufferObject ubo{};
+    ubo.model = glm::rotate(
+        glm::mat4(1.0f),
+        time * glm::radians(90.0f),
+        glm::vec3(0.0f, 0.0f, 1.0f)
     );
+    ubo.view = glm::lookAt(
+        glm::vec3(2.0f, 2.0f, 2.0f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 0.0f, 1.0f)
+    );
+    ubo.projection = glm::perspective(
+        glm::radians(45.0f),
+        static_cast<float>(
+            swapchain_context_.swapchain().swapchain_image_extent().width
+        ) /
+        static_cast<float>(
+            swapchain_context_.swapchain().swapchain_image_extent().height
+        ),
+        0.1f,
+        20.0f
+    );
+    ubo.projection[1][1] *= -1;
+    uniforms_context_.update(ubo);
 }
 
 auto Renderer::render() -> void {
@@ -95,6 +121,7 @@ auto Renderer::render() -> void {
     image_id = acquire_result.value;
     swapchain_suboptimal = acquire_result.result == vk::Result::eSuboptimalKHR;
 
+    update_ubo();
     record(image_id);
     submit(image_id);
     const auto present_result = present(image_id);
@@ -150,14 +177,13 @@ auto Renderer::record(uint32_t image_id) -> void {
         cmd.setScissor(0, scissor);
         main_pipeline_.bind(cmd);
 
-        const auto camera_descriptor_set = *camera_uniforms_context_.current_descriptor_set();
+        const auto camera_descriptor_set = *uniforms_context_.current_descriptor_set();
         cmd.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
             *main_pipeline_.layout().get(),
             0,
             camera_descriptor_set,
-            {}
-        );
+            {});
 
         render_mesh_.bind(cmd);
         cmd.drawIndexed(render_mesh_.index_count(), 1, 0, 0, 0);
@@ -213,8 +239,7 @@ auto Renderer::present(uint32_t image_id) -> vk::Result {
         }
 
         return result;
-    }
-    catch (const vk::OutOfDateKHRError&) {
+    } catch (const vk::OutOfDateKHRError&) {
         return vk::Result::eErrorOutOfDateKHR;
     }
 }
@@ -242,11 +267,9 @@ auto Renderer::recreate_swapchain(const Window& window) -> void {
     auto replacement = SwapchainContext(
         device_context_,
         window,
-        old_swapchain
-    );
+        old_swapchain);
     swapchain_context_ = std::move(replacement);
     main_pipeline_ = BasicRenderingPipelineFactory::create(
         device,
-        swapchain_context_.render_pass()
-    );
+        swapchain_context_.render_pass());
 }

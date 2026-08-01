@@ -11,7 +11,7 @@
 #include "gfx/swapchain/swapchain_context.hpp"
 #include "gfx/descriptor/descriptor_pool.hpp"
 #include "platform/window.hpp"
-#include "render/camera_uniforms_context.hpp"
+#include "render/uniforms_context.hpp"
 #include "render/render_mesh.hpp"
 
 class Renderer {
@@ -44,13 +44,15 @@ private:
     FrameContext frame_context_;
     DescriptorPool descriptor_pool_;
     PipelineState main_pipeline_;
-    CameraUniformsContext camera_uniforms_context_;
+    UniformsContext uniforms_context_;
 
     Mesh mesh_;
     RenderMesh render_mesh_;
 
     // create the default mesh
     auto create_mesh() -> void;
+
+    auto update_ubo() -> void;
 
     // recourd the command
     auto record(uint32_t image_id) -> void;
