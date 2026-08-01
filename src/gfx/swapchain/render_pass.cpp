@@ -36,5 +36,6 @@ RenderPass::RenderPass(const Device& device, const vk::Format& color_format) {
         create_info
             .setAttachments(color_attachment)
             .setSubpasses(subpass)
-            .setDependencies(dependency));
+            .setDependencies(dependency)
+        );
 }

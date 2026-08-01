@@ -8,12 +8,18 @@
 class Swapchain {
 public:
     Swapchain() = default;
+    Swapchain(
+        const DeviceContext& context,
+        const Window& window,
+        vk::SwapchainKHR old_swapchain = nullptr
+    );
+    ~Swapchain() = default;
 
-    // create the swapchain
-    auto create(const DeviceContext& context, const Window& window, vk::SwapchainKHR old_swapchain = nullptr) -> void;
+    Swapchain(const Swapchain&) = delete;
+    auto operator=(const Swapchain&) -> Swapchain& = delete;
 
-    // create the swapchain image views
-    auto create_image_views(const Device& device) -> void;
+    Swapchain(Swapchain&& other) noexcept = default;
+    auto operator=(Swapchain&& other) noexcept -> Swapchain&;
 
     // return the const reference of the swapchain
     auto get() const -> const vk::raii::SwapchainKHR& {
@@ -44,12 +50,17 @@ private:
     vk::Format swapchain_image_format_;
     vk::Extent2D swapchain_extent_;
 
+    // create the swapchain image views
+    auto create_image_views(const Device& device) -> void;
 
     // choose a suitable surface format
     auto choose_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_surface_formats) -> vk::SurfaceFormatKHR;
 
     // choose a suitable present mode
     auto choose_present_mode(const std::vector<vk::PresentModeKHR>& available_present_modes) -> vk::PresentModeKHR;
+
+    // choose a supported composite alpha mode
+    auto choose_composite_alpha(vk::CompositeAlphaFlagsKHR supported_composite_alpha) -> vk::CompositeAlphaFlagBitsKHR;
 
     // set a suitable extent
     auto choose_extent(const vk::SurfaceCapabilitiesKHR& capabilities, const Window& window) -> vk::Extent2D;

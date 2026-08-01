@@ -3,6 +3,8 @@
 
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 
+#include <optional>
+
 #include "platform/window.hpp"
 #include "gfx/device/instance.hpp"
 #include "gfx/device/surface.hpp"
@@ -10,14 +12,14 @@
 class Device {
 public:
     Device() = default;
+    Device(const Instance& instance, const Surface& surface);
+    ~Device() = default;
 
-    // create the device
-    auto create(const Instance& instance, const Surface& surface) -> void {
-        pick_physical_device(instance, surface);
-        create_logical_device(surface);
-        create_graphics_queue();
-        create_present_queue();
-    }
+    Device(const Device&) = delete;
+    auto operator=(const Device&) -> Device& = delete;
+
+    Device(Device&&) noexcept = default;
+    auto operator=(Device&& other) noexcept -> Device&;
 
     // return the const reference of the logical device
     auto logical_device() const -> const vk::raii::Device& {

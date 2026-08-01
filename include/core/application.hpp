@@ -6,10 +6,7 @@
 
 class Application {
 public:
-    Application() = default;
-    
-    // composition root
-    auto init() -> void;
+    Application() : window_(1200, 800), renderer_(window_) {};
 
     // entry point of the application
     auto run() -> void;

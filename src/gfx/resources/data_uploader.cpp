@@ -10,6 +10,30 @@
 DataUploader::DataUploader(const Device& device, const GpuAllocator& allocator)
     : device_(&device), allocator_(&allocator) {}
 
+DataUploader::DataUploader(DataUploader&& other) noexcept
+    : device_(std::exchange(other.device_, nullptr)),
+      allocator_(std::exchange(other.allocator_, nullptr)),
+      pending_uploads_(std::move(other.pending_uploads_)) {}
+
+auto DataUploader::operator=(DataUploader&& other) noexcept -> DataUploader& {
+    if (this == &other) {
+        return *this;
+    }
+
+    pending_uploads_ = std::move(other.pending_uploads_);
+    device_ = std::exchange(other.device_, nullptr);
+    allocator_ = std::exchange(other.allocator_, nullptr);
+    return *this;
+}
+
+auto DataUploader::rebind(
+    const Device& device,
+    const GpuAllocator& allocator
+) noexcept -> void {
+    device_ = &device;
+    allocator_ = &allocator;
+}
+
 auto DataUploader::enqueue(
     const void* data,
     vk::DeviceSize size,

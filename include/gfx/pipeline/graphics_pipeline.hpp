@@ -2,9 +2,10 @@
 #define GRAPHICS_PIPELINE_HPP
 
 #include "gfx/device/device.hpp"
+#include "gfx/swapchain/render_pass.hpp"
 #include "gfx/pipeline/shader_module.hpp"
 #include "gfx/pipeline/pipeline_layout.hpp"
-#include "gfx/swapchain/render_pass.hpp"
+#include "gfx/pipeline/pipeline.hpp"
 
 struct GraphicsPipelineDesc {
     const ShaderModule* vertex_shader = nullptr;
@@ -27,18 +28,10 @@ struct GraphicsPipelineDesc {
     bool blend_enable = false;
 };
 
-class GraphicsPipeline {
+class GraphicsPipelineFactory {
 public:
-    GraphicsPipeline() = default;
-
-    GraphicsPipeline(const Device& device, const GraphicsPipelineDesc& desc);
-
-    auto get() const -> const vk::raii::Pipeline& {
-        return handle_;
-    }
-
-private:
-    vk::raii::Pipeline handle_ = nullptr;
+    // create a graphics pipeline
+    static auto create(const Device& device, const GraphicsPipelineDesc& desc) -> Pipeline;
 };
 
 #endif

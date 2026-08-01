@@ -9,16 +9,14 @@ class Device;
 class GpuAllocator {
 public:
     GpuAllocator() = default;
+    GpuAllocator(const Instance& instance, const Device& device);
     ~GpuAllocator() noexcept;
 
     GpuAllocator(const GpuAllocator&) = delete;
     auto operator=(const GpuAllocator&) -> GpuAllocator& = delete;
 
-    GpuAllocator(GpuAllocator&&) = delete;
-    auto operator=(GpuAllocator&&) -> GpuAllocator& = delete;
-
-    // create the gpu allocator
-    auto create(const Instance& instance, const Device& device) -> void;
+    GpuAllocator(GpuAllocator&& other) noexcept;
+    auto operator=(GpuAllocator&& other) noexcept -> GpuAllocator&;
 
     // return the handle
     auto get() const noexcept -> VmaAllocator {

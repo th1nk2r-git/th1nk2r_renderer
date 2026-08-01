@@ -1,7 +1,8 @@
 #include "platform/window.hpp"
 #include <stdexcept>
+#include <utility>
 
-auto Window::create(uint16_t width, uint16_t height) -> void {
+Window::Window(uint16_t width, uint16_t height) {
     if (!glfwInit()) {
         throw std::runtime_error("failed to initialize GLFW!");
     }
@@ -26,6 +27,37 @@ auto Window::create(uint16_t width, uint16_t height) -> void {
     glfwSetFramebufferSizeCallback(handle_, framebuffer_size_callback);
 }
 
+Window::Window(Window&& other) noexcept
+    : handle_(std::exchange(other.handle_, nullptr)),
+      framebuffer_resized_(std::exchange(other.framebuffer_resized_, false)) {
+    if (handle_ != nullptr) {
+        glfwSetWindowUserPointer(handle_, this);
+    }
+}
+
+auto Window::operator=(Window&& other) noexcept -> Window& {
+    if (this == &other) {
+        return *this;
+    }
+
+    const bool released_last_window = handle_ != nullptr && other.handle_ == nullptr;
+    if (handle_ != nullptr) {
+        glfwDestroyWindow(handle_);
+    }
+
+    handle_ = std::exchange(other.handle_, nullptr);
+    framebuffer_resized_ = std::exchange(other.framebuffer_resized_, false);
+
+    if (handle_ != nullptr) {
+        glfwSetWindowUserPointer(handle_, this);
+    }
+    else if (released_last_window) {
+        glfwTerminate();
+    }
+
+    return *this;
+}
+
 auto Window::framebuffer_size_callback(
     GLFWwindow* window,
     int,
@@ -37,9 +69,10 @@ auto Window::framebuffer_size_callback(
     }
 }
 
-Window::~Window() {
-    if (this->handle_ != nullptr) {
-        glfwDestroyWindow(this->handle_);
+Window::~Window() noexcept {
+    if (handle_ != nullptr) {
+        glfwDestroyWindow(handle_);
+        handle_ = nullptr;
+        glfwTerminate();
     }
-    glfwTerminate();
 }

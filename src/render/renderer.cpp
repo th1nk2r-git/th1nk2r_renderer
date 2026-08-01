@@ -1,109 +1,86 @@
 #include "render/renderer.hpp"
+#include "render/pipeline/basic_rendering.hpp"
 
 #include <array>
-#include <cstddef>
 #include <filesystem>
+#include <memory>
 #include <stdexcept>
 #include <utility>
 
-auto Renderer::create(const Window& window) -> void {
-    device_context_.create(window);
-    data_uploader_ = DataUploader(
+namespace {
+    auto create_descriptor_pool(
+        const Device& device,
+        uint32_t frame_count
+    ) -> DescriptorPool {
+        vk::DescriptorPoolSize camera_uniform_pool_size{};
+        camera_uniform_pool_size
+            .setType(vk::DescriptorType::eUniformBuffer)
+            .setDescriptorCount(frame_count);
+
+        const std::array pool_sizes{camera_uniform_pool_size};
+        return DescriptorPool(device, frame_count, pool_sizes);
+    }
+}
+
+Renderer::Renderer(const Window& window)
+    : device_context_(window),
+      data_uploader_(
+          device_context_.device(),
+          device_context_.allocator()
+      ),
+      swapchain_context_(device_context_, window),
+      frame_context_(device_context_.device()),
+      descriptor_pool_(
+        create_descriptor_pool(
+          device_context_.device(),
+          frame_context_.frame_count()
+        )),
+      main_pipeline_(BasicRenderingPipelineFactory::create(
+          device_context_.device(),
+          swapchain_context_.render_pass()
+      )),
+      camera_uniforms_context_(
         device_context_.device(),
-        device_context_.allocator()
-    );
-    swapchain_context_.create(device_context_, window);
-    frame_context_.create(device_context_, swapchain_context_);
-    main_pipeline_layout_ = PipelineLayout(device_context_.device());
-    create_main_pipeline();
-    create_buffers();
+        device_context_.allocator(),
+        descriptor_pool_,
+        main_pipeline_.descriptor_set_layout(0),
+        frame_context_
+      ) {
+    create_mesh();
 }
 
-auto Renderer::create_main_pipeline() -> void {
-    const auto& device = device_context_.device();
-    const ShaderModule vertex_shader{
-        device,
-        "./spv/vertex.spv"
-    };
-    const ShaderModule fragment_shader{
-        device,
-        "./spv/fragment.spv"
-    };
-
-    vk::VertexInputBindingDescription vertex_binding{};
-    vertex_binding
-        .setBinding(0)
-        .setStride(sizeof(Vertex))
-        .setInputRate(vk::VertexInputRate::eVertex);
-
-    vk::VertexInputAttributeDescription position_attribute{};
-    position_attribute
-        .setLocation(0)
-        .setBinding(0)
-        .setFormat(vk::Format::eR32G32Sfloat)
-        .setOffset(offsetof(Vertex, position));
-
-    vk::VertexInputAttributeDescription color_attribute{};
-    color_attribute
-        .setLocation(1)
-        .setBinding(0)
-        .setFormat(vk::Format::eR32G32B32Sfloat)
-        .setOffset(offsetof(Vertex, color));
-
-    GraphicsPipelineDesc pipeline_desc{};
-    pipeline_desc.vertex_shader = &vertex_shader;
-    pipeline_desc.fragment_shader = &fragment_shader;
-    pipeline_desc.layout = &main_pipeline_layout_;
-    pipeline_desc.render_pass = &swapchain_context_.render_pass();
-    pipeline_desc.vertex_bindings.push_back(vertex_binding);
-    pipeline_desc.vertex_attributes = {
-        position_attribute,
-        color_attribute
+auto Renderer::create_mesh() -> void {
+    mesh_.vertices_ = {
+        Vertex{{0.0F, 0.0F}, {1.0F, 1.0F, 1.0F}},
+        Vertex{{0.0F, 0.7F}, {1.0F, 0.0F, 0.0F}},
+        Vertex{{-0.1571F, 0.2162F}, {1.0F, 0.5F, 0.0F}},
+        Vertex{{-0.6658F, 0.2163F}, {1.0F, 1.0F, 0.0F}},
+        Vertex{{-0.2542F, -0.0826F}, {0.5F, 1.0F, 0.0F}},
+        Vertex{{-0.4115F, -0.5663F}, {0.0F, 1.0F, 1.0F}},
+        Vertex{{0.0F, -0.2673F}, {0.0F, 0.0F, 1.0F}},
+        Vertex{{0.4115F, -0.5663F}, {1.0F, 0.0F, 1.0F}},
+        Vertex{{0.2542F, -0.0826F}, {1.0F, 0.5F, 0.5F}},
+        Vertex{{0.6658F, 0.2163F}, {0.8F, 0.0F, 0.5F}},
+        Vertex{{0.1571F, 0.2162F}, {0.0F, 0.5F, 0.5F}}
     };
 
-    main_pipeline_ = GraphicsPipeline(device, pipeline_desc);
-}
-
-auto Renderer::create_buffers() -> void {
-    const vk::DeviceSize vertices_size = sizeof(Vertex) * vertices_.size();
-
-    const vk::DeviceSize indices_size  = sizeof(uint16_t) * indices_.size();
-
-    vertex_buffer_ = Buffer {
+    mesh_.indices_ = std::vector<uint32_t> {
+        0, 2, 1,
+        0, 3, 2,
+        0, 4, 3,
+        0, 5, 4,
+        0, 6, 5,
+        0, 7, 6,
+        0, 8, 7,
+        0, 9, 8,
+        0, 10, 9,
+        0, 1, 10
+    };
+    render_mesh_ = RenderMesh(
+        mesh_,
         device_context_.allocator(),
-        BufferDesc{
-            .size = vertices_size,
-            .usage = vk::BufferUsageFlagBits::eVertexBuffer |
-                     vk::BufferUsageFlagBits::eTransferDst,
-            .memory = BufferMemoryUsage::GpuOnly
-        }
-    };
-
-    index_buffer_ = Buffer {
-        device_context_.allocator(),
-        BufferDesc{
-            .size = indices_size,
-            .usage = vk::BufferUsageFlagBits::eIndexBuffer |
-                     vk::BufferUsageFlagBits::eTransferDst,
-            .memory = BufferMemoryUsage::GpuOnly
-        }
-    };
-
-    data_uploader_.enqueue(
-        vertices_.data(),
-        vertices_size,
-        vertex_buffer_,
-        vk::PipelineStageFlagBits::eVertexInput,
-        vk::AccessFlagBits::eVertexAttributeRead
+        data_uploader_
     );
-    data_uploader_.enqueue(
-        indices_.data(),
-        indices_size,
-        index_buffer_,
-        vk::PipelineStageFlagBits::eVertexInput,
-        vk::AccessFlagBits::eIndexRead
-    );
-    data_uploader_.submit_and_wait();
 }
 
 auto Renderer::render() -> void {
@@ -171,21 +148,19 @@ auto Renderer::record(uint32_t image_id) -> void {
 
         cmd.setViewport(0, viewport);
         cmd.setScissor(0, scissor);
-        cmd.bindPipeline(
+        main_pipeline_.bind(cmd);
+
+        const auto camera_descriptor_set = *camera_uniforms_context_.current_descriptor_set();
+        cmd.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
-            main_pipeline_.get()
+            *main_pipeline_.layout().get(),
+            0,
+            camera_descriptor_set,
+            {}
         );
 
-        const std::array vertex_buffers {
-            vertex_buffer_.get()
-        };
-
-        constexpr std::array<vk::DeviceSize, 1> offsets{0};
-
-        cmd.bindVertexBuffers(0, vertex_buffers, offsets);
-        cmd.bindIndexBuffer(index_buffer_.get(), 0, vk::IndexType::eUint16);
-
-        cmd.drawIndexed(indices_.size(), 1, 0, 0, 0);
+        render_mesh_.bind(cmd);
+        cmd.drawIndexed(render_mesh_.index_count(), 1, 0, 0, 0);
         cmd.endRenderPass();
     };
 
@@ -201,7 +176,7 @@ auto Renderer::submit(uint32_t image_id) -> void {
     const auto command_buffer = *frame_context_
                                      .current_command_context()
                                      .command_buffers()[0];
-    const auto signal_semaphore = *frame_context_.render_finished(image_id);
+    const auto signal_semaphore = *swapchain_context_.render_finished(image_id);
 
     vk::SubmitInfo submit_info{};
     submit_info
@@ -217,7 +192,7 @@ auto Renderer::submit(uint32_t image_id) -> void {
 }
 
 auto Renderer::present(uint32_t image_id) -> vk::Result {
-    const auto wait_semaphore = *frame_context_.render_finished(image_id);
+    const auto wait_semaphore = *swapchain_context_.render_finished(image_id);
     const auto swapchain = *swapchain_context_.swapchain().get();
 
     vk::PresentInfoKHR present_info{};
@@ -264,14 +239,14 @@ auto Renderer::recreate_swapchain(const Window& window) -> void {
     auto old_swapchain_context = std::move(swapchain_context_);
     const auto old_swapchain = *old_swapchain_context.swapchain().get();
 
-    swapchain_context_.create(
+    auto replacement = SwapchainContext(
         device_context_,
         window,
         old_swapchain
     );
-    create_main_pipeline();
-    frame_context_.recreate_swapchain_resources(
+    swapchain_context_ = std::move(replacement);
+    main_pipeline_ = BasicRenderingPipelineFactory::create(
         device,
-        swapchain_context_
+        swapchain_context_.render_pass()
     );
 }

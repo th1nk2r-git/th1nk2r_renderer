@@ -1,7 +1,26 @@
+#include <memory>
 #include <optional>
 #include <set>
+#include <utility>
 
 #include "gfx/device/device.hpp"
+
+Device::Device(const Instance& instance, const Surface& surface) {
+    pick_physical_device(instance, surface);
+    create_logical_device(surface);
+    create_graphics_queue();
+    create_present_queue();
+}
+
+auto Device::operator=(Device&& other) noexcept -> Device& {
+    if (this == &other) {
+        return *this;
+    }
+
+    std::destroy_at(this);
+    std::construct_at(this, std::move(other));
+    return *this;
+}
 
 auto Device::pick_physical_device(const Instance& instance, const Surface& surface) -> void {
     auto physical_devices = instance.get().enumeratePhysicalDevices();
@@ -16,6 +35,10 @@ auto Device::pick_physical_device(const Instance& instance, const Surface& surfa
 
 
 auto Device::is_device_suitable(const vk::raii::PhysicalDevice& dev, const Surface& surface) -> bool {
+    if (dev.getProperties().apiVersion < vk::ApiVersion14) {
+        return false;
+    }
+
     auto queue_families = dev.getQueueFamilyProperties();
     
     std::optional<uint32_t> graphics_family;
@@ -55,17 +78,6 @@ auto Device::is_device_suitable(const vk::raii::PhysicalDevice& dev, const Surfa
 }
 
 auto Device::create_logical_device(const Surface& surface) -> void {
-    vk::StructureChain<vk::PhysicalDeviceFeatures2,
-                       vk::PhysicalDeviceVulkan11Features,
-                       vk::PhysicalDeviceVulkan13Features,
-                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
-    feature_chain = {
-        {},                                    // vk::PhysicalDeviceFeatures2 (empty for now)
-        {.shaderDrawParameters = true},        // Enable shader draw parameters from Vulkan 1.1
-        {.dynamicRendering = false},            // Enable dynamic rendering from Vulkan 1.3
-        {.extendedDynamicState = false}         // Enable extended dynamic state from the extension
-    };
-
     auto queue_families = physical_device_.getQueueFamilyProperties();
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(queue_families.size()); ++i) {
@@ -101,7 +113,6 @@ auto Device::create_logical_device(const Surface& surface) -> void {
     };
 
     vk::DeviceCreateInfo device_create_info {
-        .pNext = &feature_chain.get<vk::PhysicalDeviceFeatures2>(),
         .queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
         .pQueueCreateInfos = queue_create_infos.data(),
         .enabledExtensionCount = static_cast<uint32_t>(required_device_extensions.size()),

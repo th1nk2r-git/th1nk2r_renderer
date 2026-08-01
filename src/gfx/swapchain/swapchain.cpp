@@ -1,5 +1,10 @@
 #include "gfx/swapchain/swapchain.hpp"
 
+#include <array>
+#include <memory>
+#include <stdexcept>
+#include <utility>
+
 auto Swapchain::choose_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_surface_formats) -> vk::SurfaceFormatKHR {
     for (const auto& surface_format : available_surface_formats) {
         if (surface_format.format == vk::Format::eB8G8R8A8Srgb && surface_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
@@ -18,6 +23,27 @@ auto Swapchain::choose_present_mode(const std::vector<vk::PresentModeKHR>& avail
     return vk::PresentModeKHR::eFifo;
 }
 
+auto Swapchain::choose_composite_alpha(
+    vk::CompositeAlphaFlagsKHR supported_composite_alpha
+) -> vk::CompositeAlphaFlagBitsKHR {
+    constexpr std::array preferred_modes{
+        vk::CompositeAlphaFlagBitsKHR::eOpaque,
+        vk::CompositeAlphaFlagBitsKHR::ePreMultiplied,
+        vk::CompositeAlphaFlagBitsKHR::ePostMultiplied,
+        vk::CompositeAlphaFlagBitsKHR::eInherit
+    };
+
+    for (const auto mode : preferred_modes) {
+        if (supported_composite_alpha & mode) {
+            return mode;
+        }
+    }
+
+    throw std::runtime_error(
+        "surface does not support any composite alpha mode!"
+    );
+}
+
 auto Swapchain::choose_extent(const vk::SurfaceCapabilitiesKHR& capabilities, const Window& window) -> vk::Extent2D {
     if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
         return capabilities.currentExtent;
@@ -33,11 +59,11 @@ auto Swapchain::choose_extent(const vk::SurfaceCapabilitiesKHR& capabilities, co
     return actual_extent;
 }
 
-auto Swapchain::create(
+Swapchain::Swapchain(
     const DeviceContext& context,
     const Window& window,
     vk::SwapchainKHR old_swapchain
-) -> void {
+) {
     auto available_surface_formats = context.surface().query_formats(
         context.device().physical_device()
     );
@@ -87,13 +113,26 @@ auto Swapchain::create(
     }
 
     create_info.preTransform = capabilities.currentTransform;
-    create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
+    create_info.compositeAlpha = choose_composite_alpha(
+        capabilities.supportedCompositeAlpha
+    );
     create_info.presentMode = present_mode;
     create_info.clipped = true;
     create_info.oldSwapchain = old_swapchain;
     this->handle_ = context.device().logical_device().createSwapchainKHR(create_info);
 
     this->swapchain_images_ = handle_.getImages();
+    create_image_views(context.device());
+}
+
+auto Swapchain::operator=(Swapchain&& other) noexcept -> Swapchain& {
+    if (this == &other) {
+        return *this;
+    }
+
+    std::destroy_at(this);
+    std::construct_at(this, std::move(other));
+    return *this;
 }
 
 

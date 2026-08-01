@@ -49,7 +49,7 @@ private:
     vk::raii::CommandPool command_pool_ = nullptr;
     std::vector<vk::raii::CommandBuffer> command_buffers_;
 
-    const uint32_t queue_family_ = -1;
+    const uint32_t queue_family_;
 
     // create the command pool
     auto create_command_pool(const Device& device, const uint32_t queue_family) -> void;

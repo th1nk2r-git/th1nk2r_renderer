@@ -2,8 +2,9 @@
 
 #include <array>
 #include <stdexcept>
+#include <utility>
 
-GraphicsPipeline::GraphicsPipeline(const Device& device, const GraphicsPipelineDesc& desc) {
+auto GraphicsPipelineFactory::create(const Device& device, const GraphicsPipelineDesc& desc) -> Pipeline {
     if (desc.vertex_shader == nullptr) {
         throw std::invalid_argument("graphics pipeline requires a vertex shader!");
     }
@@ -101,8 +102,13 @@ GraphicsPipeline::GraphicsPipeline(const Device& device, const GraphicsPipelineD
         .setRenderPass(desc.render_pass->get())
         .setSubpass(desc.subpass);
 
-    handle_ = device.logical_device().createGraphicsPipeline(
+    auto handle = device.logical_device().createGraphicsPipeline(
         nullptr,
         create_info
     );
+
+    return Pipeline{
+        std::move(handle),
+        vk::PipelineBindPoint::eGraphics
+    };
 }

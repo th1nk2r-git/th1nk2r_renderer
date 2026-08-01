@@ -7,18 +7,12 @@
 #include <stdexcept>
 
 namespace {
+    constexpr uint32_t spirv_magic = 0x07230203;
+    constexpr size_t spirv_header_size = 5 * sizeof(uint32_t);
 
-constexpr uint32_t spirv_magic = 0x07230203;
-constexpr size_t spirv_header_size = 5 * sizeof(uint32_t);
-
-auto shader_error(
-    const std::filesystem::path& path,
-    const std::string& reason
-) -> std::runtime_error {
-    return std::runtime_error(
-        "failed to load SPIR-V file '" + path.string() + "': " + reason
-    );
-}
+    auto shader_error(const std::filesystem::path& path, const std::string& reason) -> std::runtime_error {
+        return std::runtime_error("failed to load SPIR-V file '" + path.string() + "': " + reason);
+    }
 
 }
 
@@ -34,7 +28,7 @@ ShaderModule::ShaderModule(const Device& device, const std::filesystem::path& pa
 
     try {
         handle_ = device.logical_device().createShaderModule(create_info);
-    }
+    } 
     catch (const vk::SystemError& error) {
         throw std::runtime_error(
             "failed to create shader module from '" + path.string() +

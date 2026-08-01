@@ -1,10 +1,5 @@
 #include "core/application.hpp"
 
-auto Application::init() -> void {
-    window_.create(1200, 800);
-    renderer_.create(window_);
-}
-
 auto Application::run() -> void {
     while (!window_.should_close()) {
         window_.poll_events();

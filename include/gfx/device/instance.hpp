@@ -3,16 +3,23 @@
 
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 
+#include <array>
 #include <vulkan/vulkan_raii.hpp>
-#include <optional>
 #include <vector>
 
 class Instance {
 public:
     Instance() = default;
+    ~Instance() = default;
 
-    // create the vulkan instance
-    auto create() -> void;
+    Instance(const Instance&) = delete;
+    auto operator=(const Instance&) -> Instance& = delete;
+
+    Instance(Instance&&) noexcept = default;
+    auto operator=(Instance&& other) noexcept -> Instance&;
+
+    // construct a complete Vulkan instance while keeping the default state empty
+    static auto make() -> Instance;
 
     // return the reference of the vulkan instance
     auto get() const -> const vk::raii::Instance& {
@@ -21,6 +28,9 @@ public:
 
 
 private:
+    struct ConstructTag {};
+
+    explicit Instance(ConstructTag);
 
     vk::raii::Context dispatcher;
 
@@ -33,7 +43,7 @@ private:
     bool validation_layers_enabled = true;
 #endif
 
-    const std::vector<const char*> validation_layers = {
+    static constexpr std::array<const char*, 1> validation_layers = {
         "VK_LAYER_KHRONOS_validation"
     };
 

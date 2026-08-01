@@ -1,13 +1,15 @@
 #ifndef PIPELINE_LAYOUT_HPP
 #define PIPELINE_LAYOUT_HPP
 
+#include <span>
+
 #include "gfx/device/device.hpp"
 
 class PipelineLayout {
 public:
     PipelineLayout() = default;
 
-    PipelineLayout(const Device& device);
+    PipelineLayout(const Device& device, std::span<const vk::DescriptorSetLayout> set_layouts);
 
     auto get() const -> const vk::raii::PipelineLayout& {
         return handle_;

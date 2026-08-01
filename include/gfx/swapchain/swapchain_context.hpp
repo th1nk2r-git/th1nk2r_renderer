@@ -8,13 +8,18 @@
 class SwapchainContext {
 public:
     SwapchainContext() = default;
-
-    // create the swapchain resources
-    auto create(
+    SwapchainContext(
         const DeviceContext& context,
         const Window& window,
         vk::SwapchainKHR old_swapchain = nullptr
-    ) -> void;
+    );
+    ~SwapchainContext() = default;
+
+    SwapchainContext(const SwapchainContext&) = delete;
+    auto operator=(const SwapchainContext&) -> SwapchainContext& = delete;
+
+    SwapchainContext(SwapchainContext&& other) noexcept = default;
+    auto operator=(SwapchainContext&& other) noexcept -> SwapchainContext&;
     
     // return the const reference of the swapchain
     auto swapchain() const -> const Swapchain& {
@@ -31,17 +36,25 @@ public:
         return framebuffers_;
     }
 
+    // return the render_finished semaphore of the target swapchain image
+    auto render_finished(uint32_t image_index) const -> const vk::raii::Semaphore& {
+        return render_finished_[image_index];
+    }
+
     // acquire the next image
-    auto acquire(const vk::raii::Semaphore& image_available) const
-        -> vk::ResultValue<uint32_t>;
+    auto acquire(const vk::raii::Semaphore& image_available) const -> vk::ResultValue<uint32_t>;
 
 private:
     Swapchain swapchain_;
     RenderPass render_pass_;
     std::vector<Framebuffer> framebuffers_;
+    std::vector<vk::raii::Semaphore> render_finished_;
 
     // create the framebuffers
     auto create_framebuffers(const Device& device) -> void;
+
+    // create semaphores indexed by swapchain image
+    auto create_render_finished(const Device& device) -> void;
 };
 
 #endif

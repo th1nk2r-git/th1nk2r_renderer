@@ -3,21 +3,20 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <memory>
+#include <cstdint>
 
 class Window {
 public:
     Window() = default;
+    Window(uint16_t width, uint16_t height);
 
     Window(const Window&) = delete;
-    Window& operator = (const Window&) = delete;
-    Window(Window&&) = default;
-    Window& operator = (Window&&) = default;
+    auto operator=(const Window&) -> Window& = delete;
 
-    ~Window();
+    Window(Window&& other) noexcept;
+    auto operator=(Window&& other) noexcept -> Window&;
 
-    // create the window
-    auto create(uint16_t width, uint16_t height) -> void;
+    ~Window() noexcept;
 
     // return the flag for whether the window got closed 
     auto should_close() const -> bool {

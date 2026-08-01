@@ -10,9 +10,14 @@
 class DeviceContext {
 public:
     DeviceContext() = default;
+    explicit DeviceContext(const Window& window);
+    ~DeviceContext() = default;
 
-    // create the vulkan context
-    auto create(const Window& window) -> void;
+    DeviceContext(const DeviceContext&) = delete;
+    auto operator=(const DeviceContext&) -> DeviceContext& = delete;
+
+    DeviceContext(DeviceContext&& other) noexcept;
+    auto operator=(DeviceContext&& other) noexcept -> DeviceContext&;
 
     // return the reference of the instance
     auto instance() const -> const Instance& {

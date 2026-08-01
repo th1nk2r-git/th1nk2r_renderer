@@ -3,7 +3,9 @@
 
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
+#include <utility>
 
 namespace {
     VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_callback(
@@ -35,13 +37,18 @@ namespace {
     }
 }
 
-auto Instance::create() -> void {
+auto Instance::make() -> Instance {
+    return Instance(ConstructTag{});
+}
+
+Instance::Instance(ConstructTag) {
     constexpr vk::ApplicationInfo app_info{
         .pApplicationName = "th1nk2r renderer",
         .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
         .pEngineName = "th1nk2r engine",
         .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-        .apiVersion = vk::ApiVersion14};
+        .apiVersion = vk::ApiVersion14
+    };
 
     uint32_t glfw_extension_count = 0;
     const char** glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
@@ -80,6 +87,16 @@ auto Instance::create() -> void {
             handle_,
             debug_create_info);
     }
+}
+
+auto Instance::operator=(Instance&& other) noexcept -> Instance& {
+    if (this == &other) {
+        return *this;
+    }
+
+    std::destroy_at(this);
+    std::construct_at(this, std::move(other));
+    return *this;
 }
 
 auto Instance::check_validation_layer_support() -> bool {
