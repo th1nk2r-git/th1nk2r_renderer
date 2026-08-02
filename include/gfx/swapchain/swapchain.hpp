@@ -3,7 +3,7 @@
 
 #include "gfx/device/device_context.hpp"
 #include "gfx/device/surface.hpp"
-#include "gfx/swapchain/image_view.hpp"
+#include "gfx/resource/image_view.hpp"
 
 class Swapchain {
 public:

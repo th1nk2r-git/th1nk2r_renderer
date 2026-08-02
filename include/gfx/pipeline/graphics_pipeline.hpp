@@ -25,6 +25,12 @@ struct GraphicsPipelineDesc {
 
     vk::FrontFace front_face = vk::FrontFace::eCounterClockwise;
 
+    bool depth_test_enable = false;
+
+    bool depth_write_enable = false;
+
+    vk::CompareOp depth_compare_op = vk::CompareOp::eLess;
+
     bool blend_enable = false;
 };
 

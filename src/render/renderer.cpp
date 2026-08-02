@@ -7,7 +7,6 @@
 #include <stdexcept>
 #include <utility>
 #include <chrono>
-#define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -50,33 +49,27 @@ Renderer::Renderer(const Window& window)
 
 auto Renderer::create_mesh() -> void {
     mesh_.vertices_ = {
-        Vertex{{0.0F, 0.0F}, {1.0F, 1.0F, 1.0F}},
-        Vertex{{0.0F, 0.7F}, {1.0F, 0.0F, 0.0F}},
-        Vertex{{-0.1571F, 0.2162F}, {1.0F, 0.5F, 0.0F}},
-        Vertex{{-0.6658F, 0.2163F}, {1.0F, 1.0F, 0.0F}},
-        Vertex{{-0.2542F, -0.0826F}, {0.5F, 1.0F, 0.0F}},
-        Vertex{{-0.4115F, -0.5663F}, {0.0F, 1.0F, 1.0F}},
-        Vertex{{0.0F, -0.2673F}, {0.0F, 0.0F, 1.0F}},
-        Vertex{{0.4115F, -0.5663F}, {1.0F, 0.0F, 1.0F}},
-        Vertex{{0.2542F, -0.0826F}, {1.0F, 0.5F, 0.5F}},
-        Vertex{{0.6658F, 0.2163F}, {0.8F, 0.0F, 0.5F}},
-        Vertex{{0.1571F, 0.2162F}, {0.0F, 0.5F, 0.5F}}};
+        Vertex{{-0.5F, -0.5F, -0.5F}, {0.0F, 0.0F, 0.0F}},
+        Vertex{{0.5F, -0.5F, -0.5F}, {1.0F, 0.0F, 0.0F}},
+        Vertex{{0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 0.0F}},
+        Vertex{{-0.5F, 0.5F, -0.5F}, {0.0F, 1.0F, 0.0F}},
+        Vertex{{-0.5F, -0.5F, 0.5F}, {0.0F, 0.0F, 1.0F}},
+        Vertex{{0.5F, -0.5F, 0.5F}, {1.0F, 0.0F, 1.0F}},
+        Vertex{{0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}},
+        Vertex{{-0.5F, 0.5F, 0.5F}, {0.0F, 1.0F, 1.0F}}};
 
     mesh_.indices_ = std::vector<uint32_t>{
-        0, 1, 2,
-        0, 2, 3,
-        0, 3, 4,
-        0, 4, 5,
-        0, 5, 6,
-        0, 6, 7,
-        0, 7, 8,
-        0, 8, 9,
-        0, 9, 10,
-        0, 10, 1};
+        4, 5, 6, 4, 6, 7,
+        1, 0, 3, 1, 3, 2,
+        0, 4, 7, 0, 7, 3,
+        5, 1, 2, 5, 2, 6,
+        3, 7, 6, 3, 6, 2,
+        0, 1, 5, 0, 5, 4};
     render_mesh_ = RenderMesh(
         mesh_,
         device_context_.allocator(),
-        data_uploader_);
+        data_uploader_
+    );
 }
 
 auto Renderer::update_ubo() -> void {
@@ -137,11 +130,13 @@ auto Renderer::render() -> void {
 
 auto Renderer::record(uint32_t image_id) -> void {
     auto cmd = [&](vk::raii::CommandBuffer& cmd) {
-        vk::ClearValue clear_value{};
-        clear_value.color.float32[0] = 0.02F;
-        clear_value.color.float32[1] = 0.02F;
-        clear_value.color.float32[2] = 0.03F;
-        clear_value.color.float32[3] = 1.0F;
+        std::array<vk::ClearValue, 2> clear_values{};
+        clear_values[0].color.float32[0] = 0.02F;
+        clear_values[0].color.float32[1] = 0.02F;
+        clear_values[0].color.float32[2] = 0.03F;
+        clear_values[0].color.float32[3] = 1.0F;
+        clear_values[1].depthStencil.depth = 1.0F;
+        clear_values[1].depthStencil.stencil = 0;
 
         vk::RenderPassBeginInfo render_pass_info{};
         render_pass_info
@@ -149,7 +144,7 @@ auto Renderer::record(uint32_t image_id) -> void {
             .setFramebuffer(swapchain_context_.framebuffers().at(image_id).get())
             .setRenderArea({.offset = {0, 0},
                             .extent = swapchain_context_.swapchain().swapchain_image_extent()})
-            .setClearValues(clear_value);
+            .setClearValues(clear_values);
 
         cmd.beginRenderPass(
             render_pass_info,
@@ -197,8 +192,10 @@ auto Renderer::submit(uint32_t image_id) -> void {
     auto& device = device_context_.device();
 
     const auto wait_semaphore = *frame_context_.current_image_available();
-    const auto wait_stage = vk::PipelineStageFlags{
-        vk::PipelineStageFlagBits::eColorAttachmentOutput};
+    const auto wait_stage =
+        vk::PipelineStageFlagBits::eColorAttachmentOutput |
+        vk::PipelineStageFlagBits::eEarlyFragmentTests |
+        vk::PipelineStageFlagBits::eLateFragmentTests;
     const auto command_buffer = *frame_context_
                                      .current_command_context()
                                      .command_buffers()[0];

@@ -6,7 +6,7 @@
 #include "gfx/descriptor/descriptor_pool.hpp"
 #include "gfx/descriptor/descriptor_set_layout.hpp"
 #include "gfx/frame/frame_context.hpp"
-#include "gfx/resources/buffer.hpp"
+#include "gfx/resource/buffer.hpp"
 #include <glm/mat4x4.hpp>
 
 struct alignas(16) UniformBufferObject {

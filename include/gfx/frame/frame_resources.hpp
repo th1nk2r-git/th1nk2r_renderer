@@ -5,7 +5,7 @@
 #include "gfx/descriptor/descriptor_pool.hpp"
 #include "gfx/descriptor/descriptor_set_layout.hpp"
 #include "gfx/device/device.hpp"
-#include "gfx/resources/buffer.hpp"
+#include "gfx/resource/buffer.hpp"
 
 class FrameResources {
 public:

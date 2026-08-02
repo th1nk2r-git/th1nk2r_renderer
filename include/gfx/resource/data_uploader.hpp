@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "gfx/device/device.hpp"
-#include "gfx/resources/buffer.hpp"
+#include "gfx/resource/buffer.hpp"
 
 class DataUploader {
 public:

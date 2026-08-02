@@ -1,4 +1,4 @@
-#include "gfx/resources/data_uploader.hpp"
+#include "gfx/resource/data_uploader.hpp"
 
 #include <limits>
 #include <stdexcept>

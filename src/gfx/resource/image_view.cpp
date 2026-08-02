@@ -1,4 +1,4 @@
-#include "gfx/swapchain/image_view.hpp"
+#include "gfx/resource/image_view.hpp"
 
 ImageView::ImageView(const Device& device, const ImageViewDesc& desc) {
     handle_ = device.logical_device().createImageView(

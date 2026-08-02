@@ -42,7 +42,7 @@ auto BasicRenderingPipelineFactory::create(const Device& device, const RenderPas
     position_attribute
         .setLocation(0)
         .setBinding(0)
-        .setFormat(vk::Format::eR32G32Sfloat)
+        .setFormat(vk::Format::eR32G32B32Sfloat)
         .setOffset(offsetof(Vertex, position));
 
     vk::VertexInputAttributeDescription color_attribute{};
@@ -62,6 +62,8 @@ auto BasicRenderingPipelineFactory::create(const Device& device, const RenderPas
         position_attribute,
         color_attribute
     };
+    pipeline_desc.depth_test_enable = true;
+    pipeline_desc.depth_write_enable = true;
 
     auto pipeline = GraphicsPipelineFactory::create(device, pipeline_desc);
 

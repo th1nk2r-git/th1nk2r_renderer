@@ -1,5 +1,5 @@
 struct Input {
-    [[vk::location(0)]] float2 position;
+    [[vk::location(0)]] float3 position;
     [[vk::location(1)]] float3 color;
 };
 
@@ -18,7 +18,7 @@ ConstantBuffer<UBO> ubo : register(b0, space0);
 
 Output main(Input input) {
     Output output;
-    float4 in_pos = float4(input.position, 0.0, 1.0);
+    float4 in_pos = float4(input.position, 1.0);
     float4 world_pos = mul(ubo.model, in_pos);
     float4 view_pos = mul(ubo.view, world_pos);
     output.position = mul(ubo.proj, view_pos);

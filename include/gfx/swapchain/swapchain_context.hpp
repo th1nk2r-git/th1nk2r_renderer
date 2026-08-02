@@ -1,6 +1,8 @@
 #ifndef SWAPCHAIN_CONTEXT_HPP
 #define SWAPCHAIN_CONTEXT_HPP
 
+#include "gfx/resource/image.hpp"
+#include "gfx/resource/image_view.hpp"
 #include "gfx/swapchain/swapchain.hpp"
 #include "gfx/swapchain/render_pass.hpp"
 #include "gfx/swapchain/framebuffer.hpp"
@@ -46,9 +48,18 @@ public:
 
 private:
     Swapchain swapchain_;
+    vk::Format depth_format_ = vk::Format::eUndefined;
     RenderPass render_pass_;
+    std::vector<Image> depth_images_;
+    std::vector<ImageView> depth_image_views_;
     std::vector<Framebuffer> framebuffers_;
     std::vector<vk::raii::Semaphore> render_finished_;
+
+    // create one depth image and view for each swapchain image
+    auto create_depth_resources(
+        const Device& device,
+        const GpuAllocator& allocator
+    ) -> void;
 
     // create the framebuffers
     auto create_framebuffers(const Device& device) -> void;

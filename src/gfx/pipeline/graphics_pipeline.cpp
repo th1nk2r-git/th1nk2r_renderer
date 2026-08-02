@@ -58,6 +58,16 @@ auto GraphicsPipelineFactory::create(const Device& device, const GraphicsPipelin
         .setRasterizationSamples(vk::SampleCountFlagBits::e1)
         .setSampleShadingEnable(false);
 
+    vk::PipelineDepthStencilStateCreateInfo depth_stencil_state{};
+    depth_stencil_state
+        .setDepthTestEnable(desc.depth_test_enable)
+        .setDepthWriteEnable(desc.depth_write_enable)
+        .setDepthCompareOp(desc.depth_compare_op)
+        .setDepthBoundsTestEnable(false)
+        .setStencilTestEnable(false)
+        .setMinDepthBounds(0.0F)
+        .setMaxDepthBounds(1.0F);
+
     vk::PipelineColorBlendAttachmentState color_blend_attachment{};
     color_blend_attachment
         .setBlendEnable(desc.blend_enable)
@@ -95,7 +105,7 @@ auto GraphicsPipelineFactory::create(const Device& device, const GraphicsPipelin
         .setPViewportState(&viewport_state)
         .setPRasterizationState(&rasterization_state)
         .setPMultisampleState(&multisample_state)
-        .setPDepthStencilState(nullptr)
+        .setPDepthStencilState(&depth_stencil_state)
         .setPColorBlendState(&color_blend_state)
         .setPDynamicState(&dynamic_state)
         .setLayout(desc.layout->get())

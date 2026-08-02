@@ -2,8 +2,8 @@
 #define RENDER_MESH_HPP
 
 #include "gfx/device/gpu_allocator.hpp"
-#include "gfx/resources/buffer.hpp"
-#include "gfx/resources/data_uploader.hpp"
+#include "gfx/resource/buffer.hpp"
+#include "gfx/resource/data_uploader.hpp"
 #include "geometry/mesh.hpp"
 
 class RenderMesh {

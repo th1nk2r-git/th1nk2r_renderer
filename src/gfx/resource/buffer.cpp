@@ -1,4 +1,4 @@
-#include "gfx/resources/buffer.hpp"
+#include "gfx/resource/buffer.hpp"
 
 #include <stdexcept>
 #include <string>
