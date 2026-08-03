@@ -1,5 +1,6 @@
 #include "render/renderer.hpp"
 #include "render/pipeline/basic_rendering.hpp"
+#include "resource/io/image_loader.hpp"
 
 #include <array>
 #include <filesystem>
@@ -19,8 +20,26 @@ namespace {
             .setType(vk::DescriptorType::eUniformBuffer)
             .setDescriptorCount(frame_count);
 
-        const std::array pool_sizes{camera_uniform_pool_size};
-        return DescriptorPool(device, frame_count, pool_sizes);
+        vk::DescriptorPoolSize sampled_image_pool_size{};
+        sampled_image_pool_size
+            .setType(vk::DescriptorType::eSampledImage)
+            .setDescriptorCount(1);
+
+        vk::DescriptorPoolSize sampler_pool_size{};
+        sampler_pool_size
+            .setType(vk::DescriptorType::eSampler)
+            .setDescriptorCount(1);
+
+        const std::array pool_sizes{
+            camera_uniform_pool_size,
+            sampled_image_pool_size,
+            sampler_pool_size
+        };
+        return DescriptorPool(
+            device,
+            frame_count + 1,
+            pool_sizes
+        );
     }
 }
 
@@ -44,27 +63,89 @@ Renderer::Renderer(const Window& window)
           descriptor_pool_,
           main_pipeline_.descriptor_set_layout(0),
           frame_context_) {
+    create_texture();
+    create_material();
     create_mesh();
+}
+
+auto Renderer::create_texture() -> void {
+    const auto image_data = load_image_rgba8(
+        "./assets/texture/shinku.jpg"
+    );
+
+    texture_ = Texture2D{
+        device_context_.device(),
+        device_context_.allocator(),
+        data_uploader_,
+        image_data.width,
+        image_data.height,
+        image_data.pixels,
+        vk::Format::eR8G8B8A8Srgb
+    };
+}
+
+auto Renderer::create_material() -> void {
+    sampler_ = Sampler{
+        device_context_.device(),
+        SamplerDesc{}
+    };
+
+    material_context_ = MaterialContext{
+        device_context_.device(),
+        descriptor_pool_,
+        main_pipeline_.descriptor_set_layout(1),
+        texture_,
+        sampler_
+    };
 }
 
 auto Renderer::create_mesh() -> void {
     mesh_.vertices_ = {
-        Vertex{{-0.5F, -0.5F, -0.5F}, {0.0F, 0.0F, 0.0F}},
-        Vertex{{0.5F, -0.5F, -0.5F}, {1.0F, 0.0F, 0.0F}},
-        Vertex{{0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 0.0F}},
-        Vertex{{-0.5F, 0.5F, -0.5F}, {0.0F, 1.0F, 0.0F}},
-        Vertex{{-0.5F, -0.5F, 0.5F}, {0.0F, 0.0F, 1.0F}},
-        Vertex{{0.5F, -0.5F, 0.5F}, {1.0F, 0.0F, 1.0F}},
-        Vertex{{0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}},
-        Vertex{{-0.5F, 0.5F, 0.5F}, {0.0F, 1.0F, 1.0F}}};
+        // +Z
+        Vertex{{-0.5F, -0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}},
+        Vertex{{0.5F, -0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
+        Vertex{{0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
+        Vertex{{-0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
+
+        // -Z
+        Vertex{{0.5F, -0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}},
+        Vertex{{-0.5F, -0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
+        Vertex{{-0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
+        Vertex{{0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
+
+        // -X
+        Vertex{{-0.5F, -0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}},
+        Vertex{{-0.5F, -0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
+        Vertex{{-0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
+        Vertex{{-0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
+
+        // +X
+        Vertex{{0.5F, -0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}},
+        Vertex{{0.5F, -0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
+        Vertex{{0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
+        Vertex{{0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
+
+        // +Y
+        Vertex{{-0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}},
+        Vertex{{-0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
+        Vertex{{0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
+        Vertex{{0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
+
+        // -Y
+        Vertex{{-0.5F, -0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}},
+        Vertex{{0.5F, -0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
+        Vertex{{0.5F, -0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
+        Vertex{{-0.5F, -0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}}
+    };
 
     mesh_.indices_ = std::vector<uint32_t>{
+        0, 1, 2, 0, 2, 3,
         4, 5, 6, 4, 6, 7,
-        1, 0, 3, 1, 3, 2,
-        0, 4, 7, 0, 7, 3,
-        5, 1, 2, 5, 2, 6,
-        3, 7, 6, 3, 6, 2,
-        0, 1, 5, 0, 5, 4};
+        8, 9, 10, 8, 10, 11,
+        12, 13, 14, 12, 14, 15,
+        16, 17, 18, 16, 18, 19,
+        20, 21, 22, 20, 22, 23
+    };
     render_mesh_ = RenderMesh(
         mesh_,
         device_context_.allocator(),
@@ -172,12 +253,15 @@ auto Renderer::record(uint32_t image_id) -> void {
         cmd.setScissor(0, scissor);
         main_pipeline_.bind(cmd);
 
-        const auto camera_descriptor_set = *uniforms_context_.current_descriptor_set();
+        const std::array descriptor_sets{
+            *uniforms_context_.current_descriptor_set(),
+            *material_context_.descriptor_set()
+        };
         cmd.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
             *main_pipeline_.layout().get(),
             0,
-            camera_descriptor_set,
+            descriptor_sets,
             {});
 
         render_mesh_.bind(cmd);

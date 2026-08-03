@@ -1,11 +1,13 @@
 struct Input {
     [[vk::location(0)]] float3 position;
     [[vk::location(1)]] float3 color;
+    [[vk::location(2)]] float2 texcoord;
 };
 
 struct Output {
     float4 position : SV_Position;
     [[vk::location(0)]] float3 color;
+    [[vk::location(1)]] float2 texcoord;
 };
 
 struct UBO {
@@ -23,5 +25,6 @@ Output main(Input input) {
     float4 view_pos = mul(ubo.view, world_pos);
     output.position = mul(ubo.proj, view_pos);
     output.color = input.color;
+    output.texcoord = input.texcoord;
     return output;
 }

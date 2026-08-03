@@ -2,7 +2,7 @@
 #define MESH_HPP
 
 #include <vector>
-#include "geometry/vertex.hpp"
+#include "resource/geometry/vertex.hpp"
 
 struct Mesh {
     std::vector<Vertex> vertices_;

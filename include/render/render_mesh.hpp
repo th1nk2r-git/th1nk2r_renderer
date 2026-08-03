@@ -4,7 +4,7 @@
 #include "gfx/device/gpu_allocator.hpp"
 #include "gfx/resource/buffer.hpp"
 #include "gfx/resource/data_uploader.hpp"
-#include "geometry/mesh.hpp"
+#include "resource/geometry/mesh.hpp"
 
 class RenderMesh {
 public:

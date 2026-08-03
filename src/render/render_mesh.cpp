@@ -57,19 +57,26 @@ RenderMesh::RenderMesh(const Mesh& data, const GpuAllocator& allocator, DataUplo
               .memory = BufferMemoryUsage::GpuOnly
             }
         ) {
-    uploader.enqueue(
+    uploader.enqueue_buffer(
         data.vertices_.data(),
         vertex_buffer_.size(),
         vertex_buffer_,
-        vk::PipelineStageFlagBits::eVertexInput,
-        vk::AccessFlagBits::eVertexAttributeRead
+        BufferUploadDesc{
+            .destination_stage =
+                vk::PipelineStageFlagBits::eVertexInput,
+            .destination_access =
+                vk::AccessFlagBits::eVertexAttributeRead
+        }
     );
-    uploader.enqueue(
+    uploader.enqueue_buffer(
         data.indices_.data(),
         index_buffer_.size(),
         index_buffer_,
-        vk::PipelineStageFlagBits::eVertexInput,
-        vk::AccessFlagBits::eIndexRead
+        BufferUploadDesc{
+            .destination_stage =
+                vk::PipelineStageFlagBits::eVertexInput,
+            .destination_access = vk::AccessFlagBits::eIndexRead
+        }
     );
     uploader.submit_and_wait();
 }
