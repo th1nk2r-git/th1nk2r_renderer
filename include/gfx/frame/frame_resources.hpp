@@ -13,9 +13,7 @@ public:
 
     FrameResources(const FrameResources&) = delete;
     auto operator=(const FrameResources&) -> FrameResources& = delete;
-
     FrameResources(FrameResources&&) noexcept = default;
-    auto operator=(FrameResources&&) noexcept -> FrameResources& = delete;
 
     // return the image_available semaphore
     auto image_available() const -> const vk::raii::Semaphore& {

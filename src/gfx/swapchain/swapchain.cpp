@@ -5,6 +5,13 @@
 #include <stdexcept>
 #include <utility>
 
+struct Swapchain::CreateState {
+    vk::raii::SwapchainKHR handle;
+    std::vector<vk::Image> images;
+    vk::Format format;
+    vk::Extent2D extent;
+};
+
 auto Swapchain::choose_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_surface_formats) -> vk::SurfaceFormatKHR {
     for (const auto& surface_format : available_surface_formats) {
         if (surface_format.format == vk::Format::eB8G8R8A8Srgb && surface_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
@@ -63,7 +70,23 @@ Swapchain::Swapchain(
     const DeviceContext& context,
     const Window& window,
     vk::SwapchainKHR old_swapchain
-) {
+) : Swapchain(context.device(), create(context, window, old_swapchain)) {}
+
+Swapchain::Swapchain(const Device& device, CreateState state)
+    : handle_(std::move(state.handle)),
+      swapchain_images_(std::move(state.images)),
+      swapchain_image_views_(create_image_views(
+          device,
+          swapchain_images_,
+          state.format)),
+      swapchain_image_format_(state.format),
+      swapchain_extent_(state.extent) {}
+
+auto Swapchain::create(
+    const DeviceContext& context,
+    const Window& window,
+    vk::SwapchainKHR old_swapchain
+) -> CreateState {
     auto available_surface_formats = context.surface().query_formats(
         context.device().physical_device()
     );
@@ -79,9 +102,6 @@ Swapchain::Swapchain(
     auto surface_format = choose_surface_format(available_surface_formats);
     auto present_mode = choose_present_mode(available_present_modes);
     auto extent = choose_extent(capabilities, window);
-
-    this->swapchain_image_format_ = surface_format.format;
-    this->swapchain_extent_ = extent;
 
     uint32_t image_count = capabilities.minImageCount + 1;
     if (capabilities.maxImageCount > 0 && image_count > capabilities.maxImageCount) {
@@ -119,10 +139,17 @@ Swapchain::Swapchain(
     create_info.presentMode = present_mode;
     create_info.clipped = true;
     create_info.oldSwapchain = old_swapchain;
-    this->handle_ = context.device().logical_device().createSwapchainKHR(create_info);
+    auto handle = context.device()
+                      .logical_device()
+                      .createSwapchainKHR(create_info);
+    auto images = handle.getImages();
 
-    this->swapchain_images_ = handle_.getImages();
-    create_image_views(context.device());
+    return CreateState{
+        .handle = std::move(handle),
+        .images = std::move(images),
+        .format = surface_format.format,
+        .extent = extent
+    };
 }
 
 auto Swapchain::operator=(Swapchain&& other) noexcept -> Swapchain& {
@@ -136,17 +163,23 @@ auto Swapchain::operator=(Swapchain&& other) noexcept -> Swapchain& {
 }
 
 
-auto Swapchain::create_image_views(const Device& device) -> void {
-    swapchain_image_views_.clear();
-    swapchain_image_views_.reserve(swapchain_images_.size());
+auto Swapchain::create_image_views(
+    const Device& device,
+    const std::vector<vk::Image>& images,
+    vk::Format format
+) -> std::vector<ImageView> {
+    std::vector<ImageView> views;
+    views.reserve(images.size());
 
-    for (const auto& image : swapchain_images_) {
-        swapchain_image_views_.emplace_back(
+    for (const auto& image : images) {
+        views.emplace_back(
             device,
             ImageViewDesc{
                 .image = image,
-                .format = swapchain_image_format_
+                .format = format
             }
         );
     }
+
+    return views;
 }

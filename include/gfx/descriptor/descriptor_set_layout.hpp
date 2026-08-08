@@ -8,7 +8,6 @@
 class DescriptorSetLayout {
 public:
     DescriptorSetLayout() = default;
-
     DescriptorSetLayout(const Device& device, std::span<const vk::DescriptorSetLayoutBinding> bindings);
 
     auto get() const -> const vk::raii::DescriptorSetLayout& {

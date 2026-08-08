@@ -11,7 +11,6 @@
 class PipelineState {
 public:
     PipelineState() = default;
-
     PipelineState(
         std::vector<DescriptorSetLayout> descriptor_set_layouts,
         PipelineLayout layout,
@@ -20,7 +19,6 @@ public:
 
     PipelineState(const PipelineState&) = delete;
     auto operator=(const PipelineState&) -> PipelineState& = delete;
-
     PipelineState(PipelineState&&) noexcept = default;
     auto operator=(PipelineState&& other) noexcept -> PipelineState&;
 

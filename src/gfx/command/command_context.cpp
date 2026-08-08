@@ -1,17 +1,43 @@
 #include "gfx/command/command_context.hpp"
 
-auto CommandContext::create_command_pool(const Device& device, const uint32_t queue_family) -> void {
-    vk::CommandPoolCreateInfo create_info;
-    create_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
-    create_info.queueFamilyIndex = queue_family;
-    this->command_pool_ = device.logical_device().createCommandPool(create_info);
+namespace {
+    auto create_command_pool(
+        const Device& device, 
+        uint32_t queue_family
+    ) -> vk::raii::CommandPool {
+        const vk::CommandPoolCreateInfo create_info{
+            .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+            .queueFamilyIndex = queue_family
+        };
+        return device.logical_device().createCommandPool(create_info);
+    }
+
+    auto create_command_buffers(
+        const Device& device,
+        const vk::raii::CommandPool& command_pool,
+        uint32_t buffer_count
+    ) -> std::vector<vk::raii::CommandBuffer> {
+        const vk::CommandBufferAllocateInfo create_info{
+            .commandPool = command_pool,
+            .level = vk::CommandBufferLevel::ePrimary,
+            .commandBufferCount = buffer_count
+        };
+        return device.logical_device().allocateCommandBuffers(create_info);
+    }
 }
 
-auto CommandContext::create_command_buffers(const Device& device, const uint32_t buffer_count) -> void {
-    vk::CommandBufferAllocateInfo create_info;
-    create_info.commandPool = command_pool_;
-    create_info.level = vk::CommandBufferLevel::ePrimary;
-    create_info.commandBufferCount = buffer_count;
-
-    command_buffers_ = device.logical_device().allocateCommandBuffers(create_info);
-}
+CommandContext::CommandContext(
+    const Device& device,
+    uint32_t queue_family,
+    uint32_t buffer_count
+) : command_pool_(
+        create_command_pool(device, queue_family)
+    ),
+    command_buffers_(
+        create_command_buffers(
+            device,
+            command_pool_,
+            buffer_count
+        )
+    ),
+    queue_family_(queue_family) {}

@@ -1,12 +1,19 @@
 #include "gfx/frame/frame_context.hpp"
 
-FrameContext::FrameContext(const Device& device) {
-    frame_resources_.reserve(max_frames_in_flight_);
-
-    for (uint32_t i = 0; i < max_frames_in_flight_; ++i) {
-        frame_resources_.emplace_back(device);
+namespace {
+    auto create_frame_resources(const Device& device, uint32_t frame_count) 
+    -> std::vector<FrameResources> {
+        std::vector<FrameResources> resources;
+        resources.reserve(frame_count);
+        for (uint32_t i = 0; i < frame_count; ++i) {
+            resources.emplace_back(device);
+        }
+        return resources;
     }
 }
+
+FrameContext::FrameContext(const Device& device)
+    : frame_resources_(create_frame_resources(device, max_frames_in_flight_)) {}
 
 auto FrameContext::wait(const Device& device) -> void {
     static_cast<void>(device.logical_device().waitForFences(

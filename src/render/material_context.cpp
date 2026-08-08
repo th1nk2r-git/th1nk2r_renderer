@@ -4,29 +4,41 @@
 #include <stdexcept>
 #include <utility>
 
+namespace {
+    auto allocate_descriptor_set(
+        const Device& device,
+        DescriptorPool& descriptor_pool,
+        const DescriptorSetLayout& descriptor_set_layout
+    ) -> vk::raii::DescriptorSet {
+        const std::array layouts{
+            *descriptor_set_layout.get()
+        };
+        auto descriptor_sets = descriptor_pool.allocate_sets(
+            device,
+            layouts
+        );
+
+        if (descriptor_sets.size() != 1) {
+            throw std::runtime_error(
+                "material descriptor allocation returned an unexpected count!"
+            );
+        }
+
+        return std::move(descriptor_sets.front());
+    }
+}
+
 MaterialContext::MaterialContext(
     const Device& device,
     DescriptorPool& descriptor_pool,
     const DescriptorSetLayout& descriptor_set_layout,
     const Texture2D& texture,
     const Sampler& sampler
-) {
-    const std::array layouts{
-        *descriptor_set_layout.get()
-    };
-    auto descriptor_sets = descriptor_pool.allocate_sets(
+) : descriptor_set_(allocate_descriptor_set(
         device,
-        layouts
-    );
-
-    if (descriptor_sets.size() != 1) {
-        throw std::runtime_error(
-            "material descriptor allocation returned an unexpected count!"
-        );
-    }
-
-    descriptor_set_ = std::move(descriptor_sets.front());
-
+        descriptor_pool,
+        descriptor_set_layout
+    )) {
     vk::DescriptorImageInfo texture_info{};
     texture_info
         .setImageView(*texture.image_view().get())

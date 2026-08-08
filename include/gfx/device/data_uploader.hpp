@@ -32,17 +32,12 @@ struct ImageUploadDesc {
 
 class DataUploader {
 public:
-    DataUploader() noexcept = default;
     DataUploader(const Device& device, const GpuAllocator& allocator);
 
     DataUploader(const DataUploader&) = delete;
     auto operator=(const DataUploader&) -> DataUploader& = delete;
-
-    DataUploader(DataUploader&& other) noexcept;
-    auto operator=(DataUploader&& other) noexcept -> DataUploader&;
-
-    // update the owners after the enclosing renderer has moved
-    auto rebind(const Device& device, const GpuAllocator& allocator) noexcept -> void;
+    DataUploader(DataUploader&&) = delete;
+    auto operator=(DataUploader&&) -> DataUploader& = delete;
 
     // queue a CPU-to-GPU buffer upload
     // the destination buffer must include vk::BufferUsageFlagBits::eTransferDst

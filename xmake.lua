@@ -5,7 +5,14 @@ set_toolchains("msvc")
 
 add_rules("mode.debug", "mode.release")
 
-add_requires("vulkansdk", "glfw", "glm", "vulkan-memory-allocator", "stb 2026.03.18")
+add_requires(
+    "vulkansdk",
+    "glfw",
+    "glm",
+    "vulkan-memory-allocator",
+    "stb 2026.03.18",
+    "assimp 6.0.4"
+)
 
 target("application")
     set_kind("binary")
@@ -13,7 +20,14 @@ target("application")
     add_defines("GLM_FORCE_RADIANS", "GLM_FORCE_DEPTH_ZERO_TO_ONE")
     add_files("src/**.cpp")
     add_includedirs("./include")
-    add_packages("vulkansdk", "glfw", "glm", "vulkan-memory-allocator", "stb")
+    add_packages(
+        "vulkansdk",
+        "glfw",
+        "glm",
+        "vulkan-memory-allocator",
+        "stb",
+        "assimp"
+    )
 
     after_build(function (target)
         local shader_dir = os.projectdir() .. "/shaders"

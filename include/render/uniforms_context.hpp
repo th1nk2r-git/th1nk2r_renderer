@@ -27,7 +27,6 @@ public:
 
     UniformsContext(const UniformsContext&) = delete;
     auto operator=(const UniformsContext&) -> UniformsContext& = delete;
-
     UniformsContext(UniformsContext&&) = delete;
     auto operator=(UniformsContext&&) -> UniformsContext& = delete;
 

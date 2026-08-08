@@ -2,15 +2,13 @@
 #define TEXTURE2D_HPP
 
 #include "gfx/device/device.hpp"
+#include "gfx/device/data_uploader.hpp"
 #include "gfx/device/gpu_allocator.hpp"
-#include "gfx/resource/data_uploader.hpp"
 #include "gfx/resource/image.hpp"
 #include "gfx/resource/image_view.hpp"
 
 class Texture2D {
 public:
-    Texture2D() = default;
-
     Texture2D(
         const Device& device,
         const GpuAllocator& allocator,
@@ -23,9 +21,8 @@ public:
 
     Texture2D(const Texture2D&) = delete;
     auto operator=(const Texture2D&) -> Texture2D& = delete;
-
-    Texture2D(Texture2D&&) noexcept = default;
-    auto operator=(Texture2D&&) noexcept -> Texture2D& = default;
+    Texture2D(Texture2D&&) = delete;
+    auto operator=(Texture2D&&) -> Texture2D& = delete;
 
     auto image() const noexcept -> const Image& {
         return image_;

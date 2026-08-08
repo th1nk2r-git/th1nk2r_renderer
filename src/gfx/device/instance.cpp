@@ -3,9 +3,7 @@
 
 #include <cstring>
 #include <iostream>
-#include <memory>
 #include <stdexcept>
-#include <utility>
 
 namespace {
     VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_callback(
@@ -37,11 +35,15 @@ namespace {
     }
 }
 
-auto Instance::make() -> Instance {
-    return Instance(ConstructTag{});
-}
+Instance::Instance()
+    : validation_enabled_(validation_layers_enabled && check_validation_layer_support()),
+      handle_(create_instance(dispatcher, validation_enabled_)),
+      debug_messenger_(create_debug_messenger(handle_, validation_enabled_)) {}
 
-Instance::Instance(ConstructTag) {
+auto Instance::create_instance(
+    vk::raii::Context& dispatcher,
+    bool validation_enabled
+) -> vk::raii::Instance {
     constexpr vk::ApplicationInfo app_info{
         .pApplicationName = "th1nk2r renderer",
         .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
@@ -58,8 +60,6 @@ Instance::Instance(ConstructTag) {
 
     std::vector<const char*> extensions(glfw_extensions, glfw_extensions + glfw_extension_count);
 
-    const bool validation_enabled =
-        validation_layers_enabled && check_validation_layer_support();
     auto debug_create_info = make_debug_messenger_create_info();
 
     if (validation_enabled) {
@@ -75,28 +75,27 @@ Instance::Instance(ConstructTag) {
         create_info.enabledLayerCount = static_cast<uint32_t>(validation_layers.size());
         create_info.ppEnabledLayerNames = validation_layers.data();
         create_info.pNext = &debug_create_info;
-    } else if (validation_layers_enabled) {
+    } 
+    else if (validation_layers_enabled) {
         std::cerr << "[Vulkan][WARNING] Validation layer is unavailable; "
                      "debug validation is disabled.\n";
     }
 
-    this->handle_ = vk::raii::Instance(dispatcher, create_info);
-
-    if (validation_enabled) {
-        debug_messenger_ = vk::raii::DebugUtilsMessengerEXT(
-            handle_,
-            debug_create_info);
-    }
+    return vk::raii::Instance(dispatcher, create_info);
 }
 
-auto Instance::operator=(Instance&& other) noexcept -> Instance& {
-    if (this == &other) {
-        return *this;
+auto Instance::create_debug_messenger(
+    const vk::raii::Instance& instance,
+    bool validation_enabled
+) -> vk::raii::DebugUtilsMessengerEXT {
+    if (!validation_enabled) {
+        return vk::raii::DebugUtilsMessengerEXT(nullptr);
     }
 
-    std::destroy_at(this);
-    std::construct_at(this, std::move(other));
-    return *this;
+    return vk::raii::DebugUtilsMessengerEXT(
+        instance,
+        make_debug_messenger_create_info()
+    );
 }
 
 auto Instance::check_validation_layer_support() -> bool {

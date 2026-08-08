@@ -7,10 +7,11 @@
 
 class CommandContext {
 public:
-    CommandContext(const Device& device, const uint32_t queue_family, const uint32_t buffer_count) : queue_family_(queue_family) {
-        create_command_pool(device, queue_family);
-        create_command_buffers(device, buffer_count);
-    }
+    CommandContext(
+        const Device& device,
+        uint32_t queue_family,
+        uint32_t buffer_count
+    );
 
     // return the const reference of the command pool
     auto command_pool() const -> const vk::raii::CommandPool& {
@@ -51,11 +52,6 @@ private:
 
     const uint32_t queue_family_;
 
-    // create the command pool
-    auto create_command_pool(const Device& device, const uint32_t queue_family) -> void;
-
-    // create a specific number of command buffers
-    auto create_command_buffers(const Device& device, const uint32_t buffer_count) -> void;
 };
 
 #endif

@@ -21,14 +21,11 @@ struct BufferDesc {
 class Buffer {
 public:
     Buffer() = default;
-
     Buffer(const GpuAllocator& allocator, const BufferDesc& desc);
-
     ~Buffer() noexcept;
 
     Buffer(const Buffer&) = delete;
     auto operator=(const Buffer&) -> Buffer& = delete;
-
     Buffer(Buffer&& other) noexcept;
     auto operator=(Buffer&& other) noexcept -> Buffer&;
 

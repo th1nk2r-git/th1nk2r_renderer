@@ -23,7 +23,6 @@ struct ImageViewDesc {
 class ImageView {
 public:
     ImageView() = default;
-
     ImageView(const Device& device, const ImageViewDesc& desc);
 
     // return the const reference of the image view

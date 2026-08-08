@@ -8,8 +8,6 @@
 
 class MaterialContext {
 public:
-    MaterialContext() = default;
-
     MaterialContext(
         const Device& device,
         DescriptorPool& descriptor_pool,
@@ -20,12 +18,10 @@ public:
 
     MaterialContext(const MaterialContext&) = delete;
     auto operator=(const MaterialContext&) -> MaterialContext& = delete;
+    MaterialContext(MaterialContext&&) = delete;
+    auto operator=(MaterialContext&&) -> MaterialContext& = delete;
 
-    MaterialContext(MaterialContext&&) noexcept = default;
-    auto operator=(MaterialContext&&) noexcept -> MaterialContext& = default;
-
-    auto descriptor_set() const noexcept
-        -> const vk::raii::DescriptorSet& {
+    auto descriptor_set() const noexcept -> const vk::raii::DescriptorSet& {
         return descriptor_set_;
     }
 

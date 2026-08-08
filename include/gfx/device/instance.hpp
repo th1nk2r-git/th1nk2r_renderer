@@ -9,17 +9,13 @@
 
 class Instance {
 public:
-    Instance() = default;
+    Instance();
     ~Instance() = default;
 
     Instance(const Instance&) = delete;
     auto operator=(const Instance&) -> Instance& = delete;
-
-    Instance(Instance&&) noexcept = default;
-    auto operator=(Instance&& other) noexcept -> Instance&;
-
-    // construct a complete Vulkan instance while keeping the default state empty
-    static auto make() -> Instance;
+    Instance(Instance&&) = delete;
+    auto operator=(Instance&&) -> Instance& = delete;
 
     // return the reference of the vulkan instance
     auto get() const -> const vk::raii::Instance& {
@@ -28,19 +24,15 @@ public:
 
 
 private:
-    struct ConstructTag {};
-
-    explicit Instance(ConstructTag);
-
     vk::raii::Context dispatcher;
-
+    bool validation_enabled_;
     vk::raii::Instance handle_ = nullptr;
     vk::raii::DebugUtilsMessengerEXT debug_messenger_ = nullptr;
 
 #ifdef NDEBUG
-    bool validation_layers_enabled = false;
+    static constexpr bool validation_layers_enabled = false;
 #else 
-    bool validation_layers_enabled = true;
+    static constexpr bool validation_layers_enabled = true;
 #endif
 
     static constexpr std::array<const char*, 1> validation_layers = {
@@ -48,7 +40,17 @@ private:
     };
 
     // check the validation layer support
-    auto check_validation_layer_support() -> bool;
+    static auto check_validation_layer_support() -> bool;
+
+    static auto create_instance(
+        vk::raii::Context& dispatcher,
+        bool validation_enabled
+    ) -> vk::raii::Instance;
+
+    static auto create_debug_messenger(
+        const vk::raii::Instance& instance,
+        bool validation_enabled
+    ) -> vk::raii::DebugUtilsMessengerEXT;
 };
 
 #endif

@@ -1,4 +1,4 @@
-#include "render/render_mesh.hpp"
+#include "gfx/resource/mesh.hpp"
 
 #include <array>
 #include <limits>
@@ -22,7 +22,7 @@ namespace {
         return static_cast<vk::DeviceSize>(values.size()) * sizeof(T);
     }
 
-    auto checked_index_count(const Mesh& data) -> uint32_t {
+    auto checked_index_count(const MeshData& data) -> uint32_t {
         if (data.indices_.empty()) {
             throw std::invalid_argument(
                 "mesh requires at least one index");
@@ -37,7 +37,7 @@ namespace {
     }
 }
 
-RenderMesh::RenderMesh(const Mesh& data, const GpuAllocator& allocator, DataUploader& uploader)
+Mesh::Mesh(const MeshData& data, const GpuAllocator& allocator, DataUploader& uploader)
     : index_count_(checked_index_count(data)),
       vertex_buffer_(
           allocator,
@@ -81,7 +81,7 @@ RenderMesh::RenderMesh(const Mesh& data, const GpuAllocator& allocator, DataUplo
     uploader.submit_and_wait();
 }
 
-auto RenderMesh::bind(vk::raii::CommandBuffer& command_buffer) const -> void {
+auto Mesh::bind(vk::raii::CommandBuffer& command_buffer) const -> void {
     const std::array vertex_buffers{
         vertex_buffer_.get()
     };

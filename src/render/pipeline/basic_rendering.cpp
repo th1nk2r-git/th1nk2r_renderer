@@ -7,7 +7,7 @@
 
 #include "gfx/pipeline/graphics_pipeline.hpp"
 #include "gfx/pipeline/shader_module.hpp"
-#include "resource/geometry/vertex.hpp"
+#include "resource/mesh_data.hpp"
 
 auto BasicRenderingPipelineFactory::create(const Device& device, const RenderPass& render_pass) -> PipelineState {
     vk::DescriptorSetLayoutBinding camera_uniform_binding{};

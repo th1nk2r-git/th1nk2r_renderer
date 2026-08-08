@@ -23,14 +23,11 @@ struct ImageDesc {
 class Image {
 public:
     Image() = default;
-
     Image(const GpuAllocator& allocator, const ImageDesc& desc);
-
     ~Image() noexcept;
 
     Image(const Image&) = delete;
     auto operator=(const Image&) -> Image& = delete;
-
     Image(Image&& other) noexcept;
     auto operator=(Image&& other) noexcept -> Image&;
 

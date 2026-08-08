@@ -5,47 +5,41 @@
 
 #include <stdexcept>
 #include <string>
-#include <utility>
 
-GpuAllocator::GpuAllocator(const Instance& instance, const Device& device) {
+namespace {
+auto create_allocator(
+    const Instance& instance,
+    const Device& device
+) -> VmaAllocator {
     VmaAllocatorCreateInfo create_info{};
     create_info.instance = static_cast<VkInstance>(*instance.get());
     create_info.physicalDevice = static_cast<VkPhysicalDevice>(*device.physical_device());
     create_info.device = static_cast<VkDevice>(*device.logical_device());
     create_info.vulkanApiVersion = VK_API_VERSION_1_4;
 
+    VmaAllocator handle = nullptr;
     const VkResult result = vmaCreateAllocator(
         &create_info,
-        &handle_
+        &handle
     );
 
     if (result != VK_SUCCESS) {
-        handle_ = nullptr;
         throw std::runtime_error(
             "failed to create GPU allocator, VkResult: " +
             std::to_string(static_cast<int>(result))
         );
     }
+
+    return handle;
 }
+}
+
+GpuAllocator::GpuAllocator(const Instance& instance, const Device& device)
+    : handle_(create_allocator(instance, device)) {}
 
 GpuAllocator::~GpuAllocator() noexcept {
     if (handle_ != nullptr) {
         vmaDestroyAllocator(handle_);
         handle_ = nullptr;
     }
-}
-
-GpuAllocator::GpuAllocator(GpuAllocator&& other) noexcept
-    : handle_(std::exchange(other.handle_, nullptr)) {}
-
-auto GpuAllocator::operator=(GpuAllocator&& other) noexcept -> GpuAllocator& {
-    if (this == &other) {
-        return *this;
-    }
-
-    if (handle_ != nullptr) {
-        vmaDestroyAllocator(handle_);
-    }
-    handle_ = std::exchange(other.handle_, nullptr);
-    return *this;
 }

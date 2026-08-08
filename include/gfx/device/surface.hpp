@@ -6,15 +6,13 @@
 
 class Surface {
 public:
-    Surface() = default;
     Surface(const Instance& instance, const Window& window);
 
     Surface(const Surface&) = delete;
     auto operator=(const Surface&) -> Surface& = delete;
+    Surface(Surface&&) = delete;
+    auto operator=(Surface&&) -> Surface& = delete;
 
-    Surface(Surface&&) noexcept = default;
-    auto operator=(Surface&&) noexcept -> Surface& = default;
-    
     // return the const reference of the surface handle
     auto get() const -> const vk::raii::SurfaceKHR& {
         return handle_;

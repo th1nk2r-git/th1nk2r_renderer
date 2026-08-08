@@ -1,9 +1,8 @@
-#include "gfx/resource/data_uploader.hpp"
+#include "gfx/device/data_uploader.hpp"
 
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
-#include <utility>
 #include <vector>
 
 #include "gfx/command/command_context.hpp"
@@ -20,8 +19,7 @@ namespace {
 
     auto validate_image_upload(
         const Image& destination,
-        const ImageUploadDesc& desc
-    ) -> void {
+        const ImageUploadDesc& desc) -> void {
         if (!destination.get()) {
             throw std::invalid_argument(
                 "image upload requires a valid destination!"
@@ -49,25 +47,19 @@ namespace {
 
         if (desc.subresource.layerCount == 0 ||
             desc.subresource.baseArrayLayer >= destination.array_layers() ||
-            desc.subresource.layerCount >
-                destination.array_layers() -
-                desc.subresource.baseArrayLayer) {
+            desc.subresource.layerCount > destination.array_layers() - desc.subresource.baseArrayLayer) {
             throw std::out_of_range(
                 "image upload array layers are out of range!"
             );
         }
 
-        if (desc.extent.width == 0 ||
-            desc.extent.height == 0 ||
-            desc.extent.depth == 0) {
+        if (desc.extent.width == 0 || desc.extent.height == 0 || desc.extent.depth == 0) {
             throw std::invalid_argument(
                 "image upload extent dimensions must be greater than zero!"
             );
         }
 
-        if (desc.destination_offset.x < 0 ||
-            desc.destination_offset.y < 0 ||
-            desc.destination_offset.z < 0) {
+        if (desc.destination_offset.x < 0 || desc.destination_offset.y < 0 || desc.destination_offset.z < 0) {
             throw std::invalid_argument(
                 "image upload destination offset cannot be negative!"
             );
@@ -81,12 +73,9 @@ namespace {
             mip_dimension(destination_extent.depth, mip_level)
         };
 
-        const auto offset_x =
-            static_cast<uint32_t>(desc.destination_offset.x);
-        const auto offset_y =
-            static_cast<uint32_t>(desc.destination_offset.y);
-        const auto offset_z =
-            static_cast<uint32_t>(desc.destination_offset.z);
+        const auto offset_x = static_cast<uint32_t>(desc.destination_offset.x);
+        const auto offset_y = static_cast<uint32_t>(desc.destination_offset.y);
+        const auto offset_z = static_cast<uint32_t>(desc.destination_offset.z);
 
         if (offset_x > mip_extent.width ||
             desc.extent.width > mip_extent.width - offset_x ||
@@ -95,34 +84,29 @@ namespace {
             offset_z > mip_extent.depth ||
             desc.extent.depth > mip_extent.depth - offset_z) {
             throw std::out_of_range(
-                "image upload region exceeds the destination subresource!"
-            );
+                "image upload region exceeds the destination subresource!");
         }
 
         if (desc.final_layout == vk::ImageLayout::eUndefined ||
             desc.final_layout == vk::ImageLayout::ePreinitialized) {
             throw std::invalid_argument(
-                "image upload requires a usable final layout!"
-            );
+                "image upload requires a usable final layout!");
         }
 
         if (!desc.destination_stage) {
             throw std::invalid_argument(
-                "image upload requires a destination pipeline stage!"
-            );
+                "image upload requires a destination pipeline stage!");
         }
 
         if (!desc.destination_access) {
             throw std::invalid_argument(
-                "image upload requires a destination access mask!"
-            );
+                "image upload requires a destination access mask!");
         }
     }
 
     auto subresource_range(
-        const vk::ImageSubresourceLayers& subresource
-    ) -> vk::ImageSubresourceRange {
-        return vk::ImageSubresourceRange{
+        const vk::ImageSubresourceLayers& subresource) -> vk::ImageSubresourceRange {
+        return vk::ImageSubresourceRange {
             subresource.aspectMask,
             subresource.mipLevel,
             1,
@@ -135,42 +119,14 @@ namespace {
 DataUploader::DataUploader(const Device& device, const GpuAllocator& allocator)
     : device_(&device), allocator_(&allocator) {}
 
-DataUploader::DataUploader(DataUploader&& other) noexcept
-    : device_(std::exchange(other.device_, nullptr)),
-      allocator_(std::exchange(other.allocator_, nullptr)),
-      pending_buffer_uploads_(std::move(other.pending_buffer_uploads_)),
-      pending_image_uploads_(std::move(other.pending_image_uploads_)) {}
-
-auto DataUploader::operator=(DataUploader&& other) noexcept -> DataUploader& {
-    if (this == &other) {
-        return *this;
-    }
-
-    pending_buffer_uploads_ = std::move(other.pending_buffer_uploads_);
-    pending_image_uploads_ = std::move(other.pending_image_uploads_);
-    device_ = std::exchange(other.device_, nullptr);
-    allocator_ = std::exchange(other.allocator_, nullptr);
-    return *this;
-}
-
-auto DataUploader::rebind(
-    const Device& device,
-    const GpuAllocator& allocator
-) noexcept -> void {
-    device_ = &device;
-    allocator_ = &allocator;
-}
-
 auto DataUploader::enqueue_buffer(
     const void* data,
     vk::DeviceSize size,
     const Buffer& destination,
-    const BufferUploadDesc& desc
-) -> void {
+    const BufferUploadDesc& desc) -> void {
     if (!valid()) {
         throw std::logic_error(
-            "data uploader is not initialized!"
-        );
+            "data uploader is not initialized!");
     }
 
     if (size == 0) {
@@ -179,36 +135,31 @@ auto DataUploader::enqueue_buffer(
 
     if (data == nullptr) {
         throw std::invalid_argument(
-            "buffer upload source cannot be null!"
-        );
+            "buffer upload source cannot be null!");
     }
 
     if (!destination.get()) {
         throw std::invalid_argument(
-            "buffer upload requires a valid destination!"
-        );
+            "buffer upload requires a valid destination!");
     }
 
     if (desc.destination_offset > destination.size() ||
         size > destination.size() - desc.destination_offset) {
         throw std::out_of_range(
-            "buffer upload exceeds the destination size!"
-        );
+            "buffer upload exceeds the destination size!");
     }
 
     if (!desc.destination_stage) {
         throw std::invalid_argument(
-            "buffer upload requires a destination pipeline stage!"
-        );
+            "buffer upload requires a destination pipeline stage!");
     }
 
     if (!desc.destination_access) {
         throw std::invalid_argument(
-            "buffer upload requires a destination access mask!"
-        );
+            "buffer upload requires a destination access mask!");
     }
 
-    Buffer staging {
+    Buffer staging{
         *allocator_,
         BufferDesc{
             .size = size,
@@ -216,8 +167,8 @@ auto DataUploader::enqueue_buffer(
             .memory = BufferMemoryUsage::Upload
         }
     };
-    staging.write(data, size);
 
+    staging.write(data, size);
     pending_buffer_uploads_.push_back(
         PendingBufferUpload{
             .staging = std::move(staging),
@@ -233,12 +184,10 @@ auto DataUploader::enqueue_buffer(
 auto DataUploader::enqueue_image(
     std::span<const std::byte> data,
     const Image& destination,
-    const ImageUploadDesc& desc
-) -> void {
+    const ImageUploadDesc& desc) -> void {
     if (!valid()) {
         throw std::logic_error(
-            "data uploader is not initialized!"
-        );
+            "data uploader is not initialized!");
     }
 
     if (data.empty()) {
@@ -249,11 +198,9 @@ auto DataUploader::enqueue_image(
 
     if (data.size() >
         static_cast<size_t>(
-            std::numeric_limits<vk::DeviceSize>::max()
-        )) {
+            std::numeric_limits<vk::DeviceSize>::max())) {
         throw std::length_error(
-            "image upload source exceeds VkDeviceSize!"
-        );
+            "image upload source exceeds VkDeviceSize!");
     }
 
     const auto data_size = static_cast<vk::DeviceSize>(data.size());
@@ -284,8 +231,7 @@ auto DataUploader::enqueue_image(
 auto DataUploader::submit_and_wait() -> void {
     if (!valid()) {
         throw std::logic_error(
-            "data uploader is not initialized!"
-        );
+            "data uploader is not initialized!");
     }
 
     if (empty()) {
@@ -295,8 +241,7 @@ auto DataUploader::submit_and_wait() -> void {
     CommandContext command_context{
         *device_,
         device_->graphics_family(),
-        1
-    };
+        1};
 
     command_context.record(
         [&](vk::raii::CommandBuffer& command_buffer) {
@@ -314,8 +259,7 @@ auto DataUploader::submit_and_wait() -> void {
                     .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                     .setImage(upload.destination)
                     .setSubresourceRange(
-                        subresource_range(upload.subresource)
-                    );
+                        subresource_range(upload.subresource));
                 transfer_barriers.push_back(barrier);
             }
 
@@ -326,8 +270,7 @@ auto DataUploader::submit_and_wait() -> void {
                     {},
                     {},
                     {},
-                    transfer_barriers
-                );
+                    transfer_barriers);
             }
 
             std::vector<vk::BufferMemoryBarrier> buffer_barriers;
@@ -348,14 +291,12 @@ auto DataUploader::submit_and_wait() -> void {
                 command_buffer.copyBuffer(
                     upload.staging.get(),
                     upload.destination,
-                    copy_region
-                );
+                    copy_region);
 
                 vk::BufferMemoryBarrier barrier{};
                 barrier
                     .setSrcAccessMask(
-                        vk::AccessFlagBits::eTransferWrite
-                    )
+                        vk::AccessFlagBits::eTransferWrite)
                     .setDstAccessMask(upload.destination_access)
                     .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                     .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
@@ -381,8 +322,7 @@ auto DataUploader::submit_and_wait() -> void {
                     upload.staging.get(),
                     upload.destination,
                     vk::ImageLayout::eTransferDstOptimal,
-                    copy_region
-                );
+                    copy_region);
 
                 vk::ImageMemoryBarrier barrier{};
                 barrier
@@ -394,8 +334,7 @@ auto DataUploader::submit_and_wait() -> void {
                     .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                     .setImage(upload.destination)
                     .setSubresourceRange(
-                        subresource_range(upload.subresource)
-                    );
+                        subresource_range(upload.subresource));
                 image_barriers.push_back(barrier);
 
                 destination_stages |= upload.destination_stage;
@@ -407,8 +346,7 @@ auto DataUploader::submit_and_wait() -> void {
                 {},
                 {},
                 buffer_barriers,
-                image_barriers
-            );
+                image_barriers);
         }
     );
 
@@ -426,9 +364,7 @@ auto DataUploader::submit_and_wait() -> void {
         device_->logical_device().waitForFences(
             *fence,
             true,
-            std::numeric_limits<uint64_t>::max()
-        )
-    );
+            std::numeric_limits<uint64_t>::max()));
 
     pending_buffer_uploads_.clear();
     pending_image_uploads_.clear();

@@ -19,7 +19,6 @@ public:
 
     SwapchainContext(const SwapchainContext&) = delete;
     auto operator=(const SwapchainContext&) -> SwapchainContext& = delete;
-
     SwapchainContext(SwapchainContext&& other) noexcept = default;
     auto operator=(SwapchainContext&& other) noexcept -> SwapchainContext&;
     
@@ -55,17 +54,6 @@ private:
     std::vector<Framebuffer> framebuffers_;
     std::vector<vk::raii::Semaphore> render_finished_;
 
-    // create one depth image and view for each swapchain image
-    auto create_depth_resources(
-        const Device& device,
-        const GpuAllocator& allocator
-    ) -> void;
-
-    // create the framebuffers
-    auto create_framebuffers(const Device& device) -> void;
-
-    // create semaphores indexed by swapchain image
-    auto create_render_finished(const Device& device) -> void;
 };
 
 #endif

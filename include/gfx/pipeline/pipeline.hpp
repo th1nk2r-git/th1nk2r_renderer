@@ -6,12 +6,10 @@
 class Pipeline {
 public:
     Pipeline() = default;
-
     Pipeline(vk::raii::Pipeline handle, vk::PipelineBindPoint bind_point) noexcept;
 
     Pipeline(const Pipeline&) = delete;
     auto operator=(const Pipeline&) -> Pipeline& = delete;
-
     Pipeline(Pipeline&&) noexcept = default;
     auto operator=(Pipeline&&) noexcept -> Pipeline& = default;
 

@@ -117,6 +117,19 @@ Texture2D::Texture2D(
               pixels,
               format
           )
+      ),
+      image_view_(
+          device,
+          ImageViewDesc{
+              .image = image_.get(),
+              .format = format,
+              .aspect_flags = vk::ImageAspectFlagBits::eColor,
+              .view_type = vk::ImageViewType::e2D,
+              .base_mip_level = 0,
+              .level_count = 1,
+              .base_array_layer = 0,
+              .layer_count = 1
+          }
       ) {
     ImageUploadDesc upload_desc{};
     upload_desc.extent = vk::Extent3D{width, height, 1};
@@ -127,18 +140,4 @@ Texture2D::Texture2D(
         upload_desc
     );
     uploader.submit_and_wait();
-
-    image_view_ = ImageView(
-        device,
-        ImageViewDesc{
-            .image = image_.get(),
-            .format = format,
-            .aspect_flags = vk::ImageAspectFlagBits::eColor,
-            .view_type = vk::ImageViewType::e2D,
-            .base_mip_level = 0,
-            .level_count = 1,
-            .base_array_layer = 0,
-            .layer_count = 1
-        }
-    );
 }

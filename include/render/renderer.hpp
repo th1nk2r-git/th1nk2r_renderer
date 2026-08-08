@@ -6,8 +6,7 @@
 #include "gfx/device/device_context.hpp"
 #include "gfx/frame/frame_context.hpp"
 #include "gfx/pipeline/pipeline_state.hpp"
-#include "gfx/resource/buffer.hpp"
-#include "gfx/resource/data_uploader.hpp"
+#include "gfx/resource/mesh.hpp"
 #include "gfx/resource/sampler.hpp"
 #include "gfx/resource/texture2d.hpp"
 #include "gfx/swapchain/swapchain_context.hpp"
@@ -15,7 +14,6 @@
 #include "platform/window.hpp"
 #include "render/material_context.hpp"
 #include "render/uniforms_context.hpp"
-#include "render/render_mesh.hpp"
 
 class Renderer {
 public:
@@ -25,9 +23,8 @@ public:
 
     Renderer(const Renderer&) = delete;
     auto operator=(const Renderer&) -> Renderer& = delete;
-
-    Renderer(Renderer&& other) = delete;
-    auto operator=(Renderer&& other) noexcept -> Renderer& = delete;
+    Renderer(Renderer&&) = delete;
+    auto operator=(Renderer&&) -> Renderer& = delete;
 
     // render a frame
     auto render() -> void;
@@ -42,27 +39,17 @@ public:
 
 private:
     DeviceContext device_context_;
-    DataUploader data_uploader_;
     SwapchainContext swapchain_context_;
     FrameContext frame_context_;
     DescriptorPool descriptor_pool_;
     PipelineState main_pipeline_;
     UniformsContext uniforms_context_;
 
+    MeshData mesh_data_;
     Mesh mesh_;
-    RenderMesh render_mesh_;
     Texture2D texture_;
     Sampler sampler_;
     MaterialContext material_context_;
-
-    // create the default mesh
-    auto create_mesh() -> void;
-
-    // create the default texture
-    auto create_texture() -> void;
-
-    // create the default material descriptors
-    auto create_material() -> void;
 
     // update the ubo per frame
     auto update_ubo() -> void;

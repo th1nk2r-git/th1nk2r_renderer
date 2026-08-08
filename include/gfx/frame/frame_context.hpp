@@ -8,14 +8,12 @@
 
 class FrameContext {
 public:
-    FrameContext() = default;
     FrameContext(const Device& device);
 
     FrameContext(const FrameContext&) = delete;
     auto operator=(const FrameContext&) -> FrameContext& = delete;
-
-    FrameContext(FrameContext&&) noexcept = default;
-    auto operator=(FrameContext&&) noexcept -> FrameContext& = default;
+    FrameContext(FrameContext&&) = delete;
+    auto operator=(FrameContext&&) -> FrameContext& = delete;
 
     // return the current frame index
     auto current_frame_index() const noexcept -> uint32_t {

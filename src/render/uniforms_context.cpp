@@ -3,6 +3,51 @@
 #include <stdexcept>
 #include <vector>
 
+namespace {
+    auto checked_frame_count(const FrameContext& frame_context) -> uint32_t {
+        const auto frame_count = frame_context.frame_count();
+        if (frame_count == 0) {
+            throw std::invalid_argument(
+                "camera context requires at least one frame in flight"
+            );
+        }
+        return frame_count;
+    }
+
+    auto create_uniform_buffers(
+        const GpuAllocator& allocator,
+        uint32_t frame_count
+    ) -> std::vector<Buffer> {
+        std::vector<Buffer> buffers;
+        buffers.reserve(frame_count);
+        for (uint32_t frame_index = 0; frame_index < frame_count; ++frame_index) {
+            buffers.emplace_back(
+                allocator,
+                BufferDesc{
+                    .size = sizeof(UniformBufferObject),
+                    .usage = vk::BufferUsageFlagBits::eUniformBuffer,
+                    .memory = BufferMemoryUsage::Upload,
+                    .persistent_mapping = true
+                }
+            );
+        }
+        return buffers;
+    }
+
+    auto allocate_descriptor_sets(
+        const Device& device,
+        DescriptorPool& descriptor_pool,
+        const DescriptorSetLayout& descriptor_set_layout,
+        uint32_t frame_count
+    ) -> std::vector<vk::raii::DescriptorSet> {
+        const std::vector<vk::DescriptorSetLayout> layouts(
+            frame_count,
+            *descriptor_set_layout.get()
+        );
+        return descriptor_pool.allocate_sets(device, layouts);
+    }
+}
+
 UniformsContext::UniformsContext(
     const Device& device,
     const GpuAllocator& allocator,
@@ -10,35 +55,18 @@ UniformsContext::UniformsContext(
     const DescriptorSetLayout& descriptor_set_layout,
     const FrameContext& frame_context
 )
-    : frame_context_(frame_context) {
+    : frame_context_(frame_context),
+      uniform_buffers_(create_uniform_buffers(
+          allocator,
+          checked_frame_count(frame_context_)
+      )),
+      descriptor_sets_(allocate_descriptor_sets(
+          device,
+          descriptor_pool,
+          descriptor_set_layout,
+          static_cast<uint32_t>(uniform_buffers_.size())
+      )) {
     const auto frame_count = frame_context_.frame_count();
-    if (frame_count == 0) {
-        throw std::invalid_argument(
-            "camera context requires at least one frame in flight"
-        );
-    }
-
-    uniform_buffers_.reserve(frame_count);
-    for (uint32_t frame_index = 0; frame_index < frame_count; ++frame_index) {
-        uniform_buffers_.emplace_back(
-            allocator,
-            BufferDesc{
-                .size = sizeof(UniformBufferObject),
-                .usage = vk::BufferUsageFlagBits::eUniformBuffer,
-                .memory = BufferMemoryUsage::Upload,
-                .persistent_mapping = true
-            }
-        );
-    }
-
-    const std::vector<vk::DescriptorSetLayout> descriptor_set_layouts(
-        frame_count,
-        *descriptor_set_layout.get()
-    );
-    descriptor_sets_ = descriptor_pool.allocate_sets(
-        device,
-        descriptor_set_layouts
-    );
 
     std::vector<vk::DescriptorBufferInfo> buffer_infos;
     std::vector<vk::WriteDescriptorSet> descriptor_writes;

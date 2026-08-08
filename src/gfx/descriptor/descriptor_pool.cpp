@@ -1,15 +1,26 @@
 #include "gfx/descriptor/descriptor_pool.hpp"
 
-DescriptorPool::DescriptorPool(const Device& device, uint32_t max_sets, std::span<const vk::DescriptorPoolSize> pool_sizes) {
+namespace {
+auto create_descriptor_pool(
+    const Device& device,
+    uint32_t max_sets,
+    std::span<const vk::DescriptorPoolSize> pool_sizes
+) -> vk::raii::DescriptorPool {
     vk::DescriptorPoolCreateInfo create_info{};
-
     create_info
         .setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
         .setMaxSets(max_sets)
         .setPoolSizes(pool_sizes);
 
-    handle_ = device.logical_device().createDescriptorPool(create_info);
+    return device.logical_device().createDescriptorPool(create_info);
 }
+}
+
+DescriptorPool::DescriptorPool(
+    const Device& device,
+    uint32_t max_sets,
+    std::span<const vk::DescriptorPoolSize> pool_sizes
+) : handle_(create_descriptor_pool(device, max_sets, pool_sizes)) {}
 
 auto DescriptorPool::allocate_sets(
     const Device& device,

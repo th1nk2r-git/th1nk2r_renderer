@@ -7,14 +7,12 @@
 
 class Window {
 public:
-    Window() = default;
     Window(uint16_t width, uint16_t height);
 
     Window(const Window&) = delete;
     auto operator=(const Window&) -> Window& = delete;
-
-    Window(Window&& other) noexcept;
-    auto operator=(Window&& other) noexcept -> Window&;
+    Window(Window&&) = delete;
+    auto operator=(Window&&) -> Window& = delete;
 
     ~Window() noexcept;
 

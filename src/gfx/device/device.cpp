@@ -1,106 +1,105 @@
-#include <memory>
-#include <optional>
-#include <set>
-#include <utility>
-
 #include "gfx/device/device.hpp"
 
-Device::Device(const Instance& instance, const Surface& surface) {
-    pick_physical_device(instance, surface);
-    create_logical_device(surface);
-    create_graphics_queue();
-    create_present_queue();
-}
+#include <optional>
+#include <set>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
 
-auto Device::operator=(Device&& other) noexcept -> Device& {
-    if (this == &other) {
-        return *this;
-    }
+Device::Device(const Instance& instance, const Surface& surface)
+    : Device(select_physical_device(instance, surface)) {}
 
-    std::destroy_at(this);
-    std::construct_at(this, std::move(other));
-    return *this;
-}
+Device::Device(SelectedPhysicalDevice selected)
+    : physical_device_(std::move(selected.physical_device)),
+      graphics_family_(selected.queue_families.graphics),
+      present_family_(selected.queue_families.present),
+      logical_device_(create_logical_device(physical_device_, selected.queue_families)),
+      graphics_queue_(logical_device_.getQueue(graphics_family_, 0)),
+      present_queue_(logical_device_.getQueue(present_family_, 0)) {}
 
-auto Device::pick_physical_device(const Instance& instance, const Surface& surface) -> void {
+auto Device::select_physical_device(
+    const Instance& instance,
+    const Surface& surface
+) -> SelectedPhysicalDevice {
     auto physical_devices = instance.get().enumeratePhysicalDevices();
-    for (auto& dev : physical_devices) {
-        if (is_device_suitable(dev, surface)) {
-            physical_device_ = dev;
-            return;
+
+    for (auto& physical_device : physical_devices) {
+        if (physical_device.getProperties().apiVersion < vk::ApiVersion14) {
+            continue;
         }
+
+        const auto queue_families = find_queue_families(
+            physical_device,
+            surface
+        );
+        if (!queue_families.has_value()) {
+            continue;
+        }
+
+        const auto available_formats = physical_device.getSurfaceFormatsKHR(surface.get());
+        const auto available_present_modes = physical_device.getSurfacePresentModesKHR(surface.get());
+        if (available_formats.empty() || available_present_modes.empty()) {
+            continue;
+        }
+        auto required_extensions = std::set<std::string>{
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        };
+        for (const auto& extension : physical_device.enumerateDeviceExtensionProperties()) {
+            required_extensions.erase(extension.extensionName);
+        }
+        if (!required_extensions.empty()) {
+            continue;
+        }
+
+        return SelectedPhysicalDevice {
+            .physical_device = std::move(physical_device),
+            .queue_families = *queue_families
+        };
     }
+
     throw std::runtime_error("failed to find a suitable GPU!");
 }
 
-
-auto Device::is_device_suitable(const vk::raii::PhysicalDevice& dev, const Surface& surface) -> bool {
-    if (dev.getProperties().apiVersion < vk::ApiVersion14) {
-        return false;
-    }
-
-    auto queue_families = dev.getQueueFamilyProperties();
-    
+auto Device::find_queue_families(
+    const vk::raii::PhysicalDevice& physical_device,
+    const Surface& surface
+) -> std::optional<QueueFamilies> {
+    const auto properties = physical_device.getQueueFamilyProperties();
     std::optional<uint32_t> graphics_family;
     std::optional<uint32_t> present_family;
 
-    for (uint32_t i = 0; i < static_cast<uint32_t>(queue_families.size()); ++i) {
-        if (queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics) {
-            graphics_family = i;
+    for (uint32_t index = 0; index < static_cast<uint32_t>(properties.size()); ++index) {
+        if (properties[index].queueFlags & vk::QueueFlagBits::eGraphics) {
+            graphics_family = index;
         }
-        vk::Bool32 present_support = dev.getSurfaceSupportKHR(i, surface.get());
-        if (present_support) {
-            present_family = i;
+        if (physical_device.getSurfaceSupportKHR(index, surface.get())) {
+            present_family = index;
         }
         if (graphics_family.has_value() && present_family.has_value()) {
-            break;
+            return QueueFamilies{
+                .graphics = *graphics_family,
+                .present = *present_family
+            };
         }
     }
-    
-    if (!graphics_family.has_value() || !present_family.has_value()) {
-        return false;
-    }
 
-    auto available_formats = dev.getSurfaceFormatsKHR(surface.get());
-    auto available_present_mode = dev.getSurfacePresentModesKHR(surface.get());
-
-    if (available_formats.empty() || available_present_mode.empty()) {
-        return false;
-    }
-    
-    auto available_extensions = dev.enumerateDeviceExtensionProperties();
-    std::set<std::string> required_extensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-    for (const auto& extension : available_extensions) {
-        required_extensions.erase(extension.extensionName);
-    }
-    
-    return required_extensions.empty();
+    return std::nullopt;
 }
 
-auto Device::create_logical_device(const Surface& surface) -> void {
-    auto queue_families = physical_device_.getQueueFamilyProperties();
-
-    for (uint32_t i = 0; i < static_cast<uint32_t>(queue_families.size()); ++i) {
-        if (queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics) {
-            this->graphics_family_ = i;
-        }
-        vk::Bool32 present_support = physical_device_.getSurfaceSupportKHR(i, surface.get());
-        if (present_support) {
-            this->present_family_ = i;
-        }
-        if (this->graphics_family_.has_value() && this->present_family_.has_value()) {
-            break;
-        }
-    }
-
-    std::set<uint32_t> unique_queue_families = {
-        this->graphics_family_.value(),
-        this->present_family_.value()
+auto Device::create_logical_device(
+    const vk::raii::PhysicalDevice& physical_device,
+    QueueFamilies queue_families
+) -> vk::raii::Device {
+    const std::set<uint32_t> unique_queue_families{
+        queue_families.graphics,
+        queue_families.present
     };
 
-    float queue_priority = 0.5f;
+    constexpr float queue_priority = 0.5F;
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
-    for (uint32_t family : unique_queue_families) {
+    queue_create_infos.reserve(unique_queue_families.size());
+    for (const uint32_t family : unique_queue_families) {
         queue_create_infos.push_back({
             .queueFamilyIndex = family,
             .queueCount = 1,
@@ -108,16 +107,18 @@ auto Device::create_logical_device(const Surface& surface) -> void {
         });
     }
 
-    std::vector<const char*> required_device_extensions = {
+    const std::vector<const char*> required_device_extensions {
         vk::KHRSwapchainExtensionName
     };
 
-    vk::DeviceCreateInfo device_create_info {
-        .queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
+    const vk::DeviceCreateInfo create_info{
+        .queueCreateInfoCount =
+            static_cast<uint32_t>(queue_create_infos.size()),
         .pQueueCreateInfos = queue_create_infos.data(),
-        .enabledExtensionCount = static_cast<uint32_t>(required_device_extensions.size()),
+        .enabledExtensionCount =
+            static_cast<uint32_t>(required_device_extensions.size()),
         .ppEnabledExtensionNames = required_device_extensions.data()
     };
 
-    this->logical_device_ = physical_device_.createDevice(device_create_info);
+    return physical_device.createDevice(create_info);
 }

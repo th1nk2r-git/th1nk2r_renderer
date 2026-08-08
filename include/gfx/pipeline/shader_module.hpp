@@ -19,9 +19,6 @@ public:
 
 private:
     vk::raii::ShaderModule handle_ = nullptr;
-
-    // read the file and return the byte code
-    static auto load_spirv(const std::filesystem::path& path) -> std::vector<char>;
 };
 
 #endif

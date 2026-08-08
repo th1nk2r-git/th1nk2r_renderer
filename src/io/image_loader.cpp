@@ -6,7 +6,7 @@
 
 #include <stb_image.h>
 
-#include "resource/io/image_loader.hpp"
+#include "io/image_loader.hpp"
 
 #include <cstring>
 #include <fstream>
