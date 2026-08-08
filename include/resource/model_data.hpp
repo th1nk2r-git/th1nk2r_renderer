@@ -4,7 +4,7 @@
 #include "resource/mesh_data.hpp"
 
 struct ModelData {
-    MeshData mesh;    
+    std::vector<MeshData> meshes_;
 };
 
 #endif

@@ -39,6 +39,7 @@ namespace {
 
 Mesh::Mesh(const MeshData& data, const GpuAllocator& allocator, DataUploader& uploader)
     : index_count_(checked_index_count(data)),
+      material_index_(data.material_index_),
       vertex_buffer_(
           allocator,
           BufferDesc{

@@ -1,10 +1,9 @@
 #include "render/renderer.hpp"
 #include "render/pipeline/basic_rendering.hpp"
 #include "io/image_loader.hpp"
+#include "io/model_loader.hpp"
 
 #include <array>
-#include <filesystem>
-#include <memory>
 #include <stdexcept>
 #include <utility>
 #include <chrono>
@@ -12,61 +11,11 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 namespace {
-    auto create_default_mesh_data() -> MeshData {
-        return MeshData{
-            .vertices_ = {
-                // +Z
-                Vertex{{-0.5F, -0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}},
-                Vertex{{0.5F, -0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
-                Vertex{{0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
-                Vertex{{-0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
-
-                // -Z
-                Vertex{{0.5F, -0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}},
-                Vertex{{-0.5F, -0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
-                Vertex{{-0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
-                Vertex{{0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
-
-                // -X
-                Vertex{{-0.5F, -0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}},
-                Vertex{{-0.5F, -0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
-                Vertex{{-0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
-                Vertex{{-0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
-
-                // +X
-                Vertex{{0.5F, -0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}},
-                Vertex{{0.5F, -0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
-                Vertex{{0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
-                Vertex{{0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
-
-                // +Y
-                Vertex{{-0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}},
-                Vertex{{-0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
-                Vertex{{0.5F, 0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
-                Vertex{{0.5F, 0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}},
-
-                // -Y
-                Vertex{{-0.5F, -0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 1.0F}},
-                Vertex{{0.5F, -0.5F, -0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}},
-                Vertex{{0.5F, -0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 0.0F}},
-                Vertex{{-0.5F, -0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {0.0F, 0.0F}}
-            },
-            .indices_ = {
-                0, 1, 2, 0, 2, 3,
-                4, 5, 6, 4, 6, 7,
-                8, 9, 10, 8, 10, 11,
-                12, 13, 14, 12, 14, 15,
-                16, 17, 18, 16, 18, 19,
-                20, 21, 22, 20, 22, 23
-            }
-        };
-    }
-
     auto create_default_texture(
         DeviceContext& device_context
     ) -> Texture2D {
         const auto image_data = load_image_rgba8(
-            "./assets/texture/shinku.jpg"
+            "./assets/viking_room/viking_room.png"
         );
 
         return Texture2D{
@@ -132,11 +81,8 @@ Renderer::Renderer(const Window& window) :
         descriptor_pool_,
         main_pipeline_.descriptor_set_layout(0),
         frame_context_),
-    mesh_data_(
-        create_default_mesh_data()
-    ),
-    mesh_(
-        mesh_data_,
+    model_(
+        load_model("./assets/viking_room/viking_room.obj"),
         device_context_.allocator(),
         device_context_.uploader()
     ),
@@ -264,10 +210,12 @@ auto Renderer::record(uint32_t image_id) -> void {
             *main_pipeline_.layout().get(),
             0,
             descriptor_sets,
-            {});
-
-        mesh_.bind(cmd);
-        cmd.drawIndexed(mesh_.index_count(), 1, 0, 0, 0);
+            {}
+        );
+        for (const auto& mesh : model_.meshes()) {
+            mesh.bind(cmd);
+            cmd.drawIndexed(mesh.index_count(), 1, 0, 0, 0);
+        }
         cmd.endRenderPass();
     };
 

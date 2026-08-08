@@ -1,12 +1,10 @@
 #ifndef RENDERER_HPP
 #define RENDERER_HPP
 
-#include <array>
-
 #include "gfx/device/device_context.hpp"
 #include "gfx/frame/frame_context.hpp"
 #include "gfx/pipeline/pipeline_state.hpp"
-#include "gfx/resource/mesh.hpp"
+#include "gfx/resource/model.hpp"
 #include "gfx/resource/sampler.hpp"
 #include "gfx/resource/texture2d.hpp"
 #include "gfx/swapchain/swapchain_context.hpp"
@@ -45,8 +43,7 @@ private:
     PipelineState main_pipeline_;
     UniformsContext uniforms_context_;
 
-    MeshData mesh_data_;
-    Mesh mesh_;
+    Model model_;
     Texture2D texture_;
     Sampler sampler_;
     MaterialContext material_context_;

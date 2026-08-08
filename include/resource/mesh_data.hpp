@@ -13,6 +13,7 @@ struct Vertex {
 struct MeshData {
     std::vector<Vertex> vertices_;
     std::vector<uint32_t> indices_;
+    uint32_t material_index_ = 0;
 };
 
 #endif
