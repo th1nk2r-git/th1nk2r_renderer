@@ -1,4 +1,4 @@
-#include "io/spirv_loader.hpp"
+#include "utils/io/spirv_loader.hpp"
 
 #include <fstream>
 #include <limits>

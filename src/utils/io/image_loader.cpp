@@ -6,7 +6,7 @@
 
 #include <stb_image.h>
 
-#include "io/image_loader.hpp"
+#include "utils/io/image_loader.hpp"
 
 #include <cstring>
 #include <fstream>
@@ -77,9 +77,7 @@ auto load_image_rgba8(std::span<const std::byte> encoded_data) -> ImageData {
         const char* failure_reason = stbi_failure_reason();
         throw std::runtime_error(
             std::string{"failed to decode image: "} +
-            (failure_reason != nullptr
-                ? failure_reason
-                : "unknown stb_image error")
+            (failure_reason != nullptr ? failure_reason : "unknown stb_image error")
         );
     }
 

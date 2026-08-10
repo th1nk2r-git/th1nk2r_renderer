@@ -3,15 +3,13 @@
 
 #include "gfx/device/device_context.hpp"
 #include "gfx/frame/frame_context.hpp"
+#include "gfx/frame/camera_uniforms.hpp"
 #include "gfx/pipeline/pipeline_state.hpp"
-#include "gfx/resource/model.hpp"
-#include "gfx/resource/sampler.hpp"
-#include "gfx/resource/texture2d.hpp"
 #include "gfx/swapchain/swapchain_context.hpp"
-#include "gfx/descriptor/descriptor_pool.hpp"
 #include "platform/window.hpp"
-#include "render/material_context.hpp"
-#include "render/uniforms_context.hpp"
+#include "scene/scene.hpp"
+
+class ResourceRegistry;
 
 class Renderer {
 public:
@@ -25,7 +23,7 @@ public:
     auto operator=(Renderer&&) -> Renderer& = delete;
 
     // render a frame
-    auto render() -> void;
+    auto render(const Scene& scene) -> void;
 
     // wait gpu
     auto wait_idle() const -> void {
@@ -35,24 +33,35 @@ public:
     // recreate the swapchain
     auto recreate_swapchain(const Window& window) -> void;
 
+    // attach the registry used to resolve resources while rendering
+    auto attach_registry(const ResourceRegistry& registry) -> void;
+
+    auto device() const noexcept -> const Device& {
+        return device_context_.device();
+    }
+
+    auto allocator() const noexcept -> const GpuAllocator& {
+        return device_context_.allocator();
+    }
+
+    auto uploader() noexcept -> DataUploader& {
+        return device_context_.uploader();
+    }
+
+    auto material_descriptor_set_layout() const -> const DescriptorSetLayout& {
+        return main_pipeline_.descriptor_set_layout(1);
+    }
+
 private:
     DeviceContext device_context_;
     SwapchainContext swapchain_context_;
     FrameContext frame_context_;
-    DescriptorPool descriptor_pool_;
     PipelineState main_pipeline_;
-    UniformsContext uniforms_context_;
-
-    Model model_;
-    Texture2D texture_;
-    Sampler sampler_;
-    MaterialContext material_context_;
-
-    // update the ubo per frame
-    auto update_ubo() -> void;
+    CameraUniforms camera_uniforms_;
+    const ResourceRegistry* registry_ = nullptr;
 
     // recourd the command
-    auto record(uint32_t image_id) -> void;
+    auto record(uint32_t image_id, const Scene& scene) -> void;
 
     // submit the command
     auto submit(uint32_t image_id) -> void;

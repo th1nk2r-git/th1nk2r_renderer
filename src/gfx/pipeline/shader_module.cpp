@@ -1,5 +1,5 @@
 #include "gfx/pipeline/shader_module.hpp"
-#include "io/spirv_loader.hpp"
+#include "utils/io/spirv_loader.hpp"
 
 #include <stdexcept>
 

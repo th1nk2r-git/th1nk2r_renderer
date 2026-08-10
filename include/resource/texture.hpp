@@ -1,5 +1,9 @@
-#ifndef TEXTURE2D_HPP
-#define TEXTURE2D_HPP
+#ifndef TEXTURE_HPP
+#define TEXTURE_HPP
+
+#include <cstddef>
+#include <cstdint>
+#include <span>
 
 #include "gfx/device/device.hpp"
 #include "gfx/device/data_uploader.hpp"
@@ -7,9 +11,9 @@
 #include "gfx/resource/image.hpp"
 #include "gfx/resource/image_view.hpp"
 
-class Texture2D {
+class Texture {
 public:
-    Texture2D(
+    Texture(
         const Device& device,
         const GpuAllocator& allocator,
         DataUploader& uploader,
@@ -19,10 +23,10 @@ public:
         vk::Format format
     );
 
-    Texture2D(const Texture2D&) = delete;
-    auto operator=(const Texture2D&) -> Texture2D& = delete;
-    Texture2D(Texture2D&&) = delete;
-    auto operator=(Texture2D&&) -> Texture2D& = delete;
+    Texture(const Texture&) = delete;
+    auto operator=(const Texture&) -> Texture& = delete;
+    Texture(Texture&&) = delete;
+    auto operator=(Texture&&) -> Texture& = delete;
 
     auto image() const noexcept -> const Image& {
         return image_;

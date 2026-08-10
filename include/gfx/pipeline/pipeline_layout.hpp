@@ -9,7 +9,11 @@ class PipelineLayout {
 public:
     PipelineLayout() = default;
 
-    PipelineLayout(const Device& device, std::span<const vk::DescriptorSetLayout> set_layouts);
+    PipelineLayout(
+        const Device& device,
+        std::span<const vk::DescriptorSetLayout> set_layouts,
+        std::span<const vk::PushConstantRange> push_constant_ranges = {}
+    );
 
     auto get() const -> const vk::raii::PipelineLayout& {
         return handle_;

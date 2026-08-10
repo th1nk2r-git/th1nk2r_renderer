@@ -25,6 +25,9 @@ public:
     // bind the pipeline to the command buffer
     auto bind(vk::raii::CommandBuffer& command_buffer) const -> void;
 
+    // replace only the render-pass-dependent graphics pipeline
+    auto replace_pipeline(Pipeline pipeline) noexcept -> void;
+
     // return the const reference of the pipeline
     auto pipeline() const noexcept -> const Pipeline& {
         return pipeline_;

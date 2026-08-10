@@ -1,140 +1,53 @@
 #include "render/renderer.hpp"
 #include "render/pipeline/basic_rendering.hpp"
-#include "io/image_loader.hpp"
-#include "io/model_loader.hpp"
+#include "resource/manager/resource_registry.hpp"
 
 #include <array>
 #include <stdexcept>
 #include <utility>
-#include <chrono>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
-namespace {
-    auto create_default_texture(
-        DeviceContext& device_context
-    ) -> Texture2D {
-        const auto image_data = load_image_rgba8(
-            "./assets/viking_room/viking_room.png"
-        );
-
-        return Texture2D{
-            device_context.device(),
-            device_context.allocator(),
-            device_context.uploader(),
-            image_data.width,
-            image_data.height,
-            image_data.pixels,
-            vk::Format::eR8G8B8A8Srgb
-        };
-    }
-
-    auto create_descriptor_pool(
-        const Device& device,
-        uint32_t frame_count) -> DescriptorPool {
-        vk::DescriptorPoolSize camera_uniform_pool_size{};
-        camera_uniform_pool_size
-            .setType(vk::DescriptorType::eUniformBuffer)
-            .setDescriptorCount(frame_count);
-
-        vk::DescriptorPoolSize sampled_image_pool_size{};
-        sampled_image_pool_size
-            .setType(vk::DescriptorType::eSampledImage)
-            .setDescriptorCount(1);
-
-        vk::DescriptorPoolSize sampler_pool_size{};
-        sampler_pool_size
-            .setType(vk::DescriptorType::eSampler)
-            .setDescriptorCount(1);
-
-        const std::array pool_sizes{
-            camera_uniform_pool_size,
-            sampled_image_pool_size,
-            sampler_pool_size
-        };
-        return DescriptorPool(
-            device,
-            frame_count + 1,
-            pool_sizes
-        );
-    }
-}
 
 Renderer::Renderer(const Window& window) : 
     device_context_(window),
     swapchain_context_(device_context_, window),
     frame_context_(device_context_.device()),
-    descriptor_pool_(
-        create_descriptor_pool(
-            device_context_.device(),
-            frame_context_.frame_count()
-        )
-    ),
     main_pipeline_(
         BasicRenderingPipelineFactory::create(
         device_context_.device(),
         swapchain_context_.render_pass())
     ),
-    uniforms_context_(
+    camera_uniforms_(
         device_context_.device(),
         device_context_.allocator(),
-        descriptor_pool_,
         main_pipeline_.descriptor_set_layout(0),
-        frame_context_),
-    model_(
-        load_model("./assets/viking_room/viking_room.obj"),
-        device_context_.allocator(),
-        device_context_.uploader()
-    ),
-    texture_(
-        create_default_texture(device_context_)
-    ),
-    sampler_(
-        device_context_.device(), 
-        SamplerDesc{}
-    ),
-    material_context_(
-        device_context_.device(),
-        descriptor_pool_,
-        main_pipeline_.descriptor_set_layout(1),
-        texture_,
-        sampler_
-    ) {}
+        frame_context_) {}
 
-auto Renderer::update_ubo() -> void {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-    const auto currentTime = std::chrono::high_resolution_clock::now();
-    const float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-    UniformBufferObject ubo{};
-    ubo.model = glm::rotate(
-        glm::mat4(1.0f),
-        time * glm::radians(90.0f),
-        glm::vec3(0.0f, 0.0f, 1.0f)
-    );
-    ubo.view = glm::lookAt(
-        glm::vec3(2.0f, 2.0f, 2.0f),
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 0.0f, 1.0f)
-    );
-    ubo.projection = glm::perspective(
-        glm::radians(45.0f),
-        static_cast<float>(
-            swapchain_context_.swapchain().swapchain_image_extent().width
-        ) /
-        static_cast<float>(
-            swapchain_context_.swapchain().swapchain_image_extent().height
-        ),
-        0.1f,
-        20.0f
-    );
-    ubo.projection[1][1] *= -1;
-    uniforms_context_.update(ubo);
+auto Renderer::attach_registry(const ResourceRegistry& registry) -> void {
+    if (registry_ != nullptr) {
+        throw std::logic_error(
+            "renderer resource registry is already attached"
+        );
+    }
+    registry_ = &registry;
 }
 
-auto Renderer::render() -> void {
+auto Renderer::render(const Scene& scene) -> void {
+    if (registry_ == nullptr) {
+        throw std::logic_error(
+            "renderer requires an attached resource registry"
+        );
+    }
+
     auto& device = device_context_.device();
     frame_context_.wait(device);
 
+    const auto extent = swapchain_context_.swapchain().swapchain_image_extent();
+    const auto aspect_ratio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+    camera_uniforms_.update(
+        ViewProjection{
+            .view = scene.camera().view_matrix(),
+            .projection = scene.camera().projection_matrix(aspect_ratio)
+        }
+    );
     auto& image_available = frame_context_.current_image_available();
     uint32_t image_id = 0;
     bool swapchain_suboptimal = false;
@@ -143,21 +56,18 @@ auto Renderer::render() -> void {
     image_id = acquire_result.value;
     swapchain_suboptimal = acquire_result.result == vk::Result::eSuboptimalKHR;
 
-    update_ubo();
-    record(image_id);
+    record(image_id, scene);
     submit(image_id);
     const auto present_result = present(image_id);
 
     frame_context_.advance();
 
-    if (swapchain_suboptimal ||
-        present_result == vk::Result::eSuboptimalKHR ||
-        present_result == vk::Result::eErrorOutOfDateKHR) {
+    if (swapchain_suboptimal || present_result == vk::Result::eSuboptimalKHR || present_result == vk::Result::eErrorOutOfDateKHR) {
         throw vk::OutOfDateKHRError("swapchain recreation required!");
     }
 }
 
-auto Renderer::record(uint32_t image_id) -> void {
+auto Renderer::record(uint32_t image_id, const Scene& scene) -> void {
     auto cmd = [&](vk::raii::CommandBuffer& cmd) {
         std::array<vk::ClearValue, 2> clear_values{};
         clear_values[0].color.float32[0] = 0.02F;
@@ -177,12 +87,9 @@ auto Renderer::record(uint32_t image_id) -> void {
 
         cmd.beginRenderPass(
             render_pass_info,
-            vk::SubpassContents::eInline);
-
-        const auto extent = swapchain_context_
-                                .swapchain()
-                                .swapchain_image_extent();
-
+            vk::SubpassContents::eInline
+        );
+        const auto extent = swapchain_context_.swapchain().swapchain_image_extent();
         vk::Viewport viewport{};
         viewport
             .setX(0.0F)
@@ -201,21 +108,44 @@ auto Renderer::record(uint32_t image_id) -> void {
         cmd.setScissor(0, scissor);
         main_pipeline_.bind(cmd);
 
-        const std::array descriptor_sets{
-            *uniforms_context_.current_descriptor_set(),
-            *material_context_.descriptor_set()
+        const std::array camera_descriptor_sets{
+            *camera_uniforms_.current_descriptor_set()
         };
         cmd.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
             *main_pipeline_.layout().get(),
             0,
-            descriptor_sets,
+            camera_descriptor_sets,
             {}
         );
-        for (const auto& mesh : model_.meshes()) {
-            mesh.bind(cmd);
-            cmd.drawIndexed(mesh.index_count(), 1, 0, 0, 0);
+
+        for (const auto& entity : scene.entities()) {
+            const auto model_matrix = entity.model_matrix();
+            cmd.pushConstants<glm::mat4>(
+                *main_pipeline_.layout().get(),
+                vk::ShaderStageFlagBits::eVertex,
+                0,
+                model_matrix
+            );
+
+            for (const auto& mesh : entity.model().meshes()) {
+                const auto& material = registry_->query(mesh.material());
+                const std::array material_descriptor_sets{
+                    *material.descriptor_set()
+                };
+                cmd.bindDescriptorSets(
+                    vk::PipelineBindPoint::eGraphics,
+                    *main_pipeline_.layout().get(),
+                    1,
+                    material_descriptor_sets,
+                    {}
+                );
+
+                mesh.bind(cmd);
+                cmd.drawIndexed(mesh.index_count(), 1, 0, 0, 0);
+            }
         }
+
         cmd.endRenderPass();
     };
 
@@ -243,7 +173,8 @@ auto Renderer::submit(uint32_t image_id) -> void {
     frame_context_.reset(device);
     device.graphics_queue().submit(
         submit_info,
-        frame_context_.current_in_flight_fence());
+        frame_context_.current_in_flight_fence()
+    );
 }
 
 auto Renderer::present(uint32_t image_id) -> vk::Result {
@@ -287,17 +218,32 @@ auto Renderer::recreate_swapchain(const Window& window) -> void {
     auto& device = device_context_.device();
     device.logical_device().waitIdle();
 
-    auto old_swapchain_context = std::move(swapchain_context_);
-    const auto old_swapchain = *old_swapchain_context.swapchain().get();
+    const auto old_swapchain = *swapchain_context_.swapchain().get();
 
     auto replacement = SwapchainContext(
         device_context_,
         window,
         old_swapchain
     );
+    const auto pipeline_is_compatible =
+        swapchain_context_.render_pass().compatible_with(
+            replacement.render_pass()
+        );
+
+    Pipeline replacement_pipeline;
+    if (!pipeline_is_compatible) {
+        replacement_pipeline =
+            BasicRenderingPipelineFactory::create_graphics_pipeline(
+                device,
+                replacement.render_pass(),
+                main_pipeline_.layout()
+            );
+    }
+
     swapchain_context_ = std::move(replacement);
-    main_pipeline_ = BasicRenderingPipelineFactory::create(
-        device,
-        swapchain_context_.render_pass()
-    );
+    if (!pipeline_is_compatible) {
+        main_pipeline_.replace_pipeline(
+            std::move(replacement_pipeline)
+        );
+    }
 }

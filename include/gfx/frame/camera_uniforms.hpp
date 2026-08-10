@@ -1,5 +1,5 @@
-#ifndef UNIFORMS_CONTEXT_HPP
-#define UNIFORMS_CONTEXT_HPP
+#ifndef CAMERA_UNIFORMS_HPP
+#define CAMERA_UNIFORMS_HPP
 
 #include <vector>
 
@@ -7,31 +7,24 @@
 #include "gfx/descriptor/descriptor_set_layout.hpp"
 #include "gfx/frame/frame_context.hpp"
 #include "gfx/resource/buffer.hpp"
-#include <glm/mat4x4.hpp>
+#include "utils/data/view_projection.hpp"
 
-struct alignas(16) UniformBufferObject {
-    glm::mat4 model {1.0F};
-    glm::mat4 view {1.0F};
-    glm::mat4 projection {1.0F};
-};
-
-class UniformsContext {
+class CameraUniforms {
 public:
-    UniformsContext(
+    CameraUniforms(
         const Device& device,
         const GpuAllocator& allocator,
-        DescriptorPool& descriptor_pool,
         const DescriptorSetLayout& descriptor_set_layout,
         const FrameContext& frame_context
     );
 
-    UniformsContext(const UniformsContext&) = delete;
-    auto operator=(const UniformsContext&) -> UniformsContext& = delete;
-    UniformsContext(UniformsContext&&) = delete;
-    auto operator=(UniformsContext&&) -> UniformsContext& = delete;
+    CameraUniforms(const CameraUniforms&) = delete;
+    auto operator=(const CameraUniforms&) -> CameraUniforms& = delete;
+    CameraUniforms(CameraUniforms&&) = delete;
+    auto operator=(CameraUniforms&&) -> CameraUniforms& = delete;
 
     // update the uniforms belonging to the current frame in flight
-    auto update(const UniformBufferObject& uniforms) -> void;
+    auto update(const ViewProjection& uniforms) -> void;
 
     // return the uniform buffer belonging to the current frame in flight
     auto current_uniform_buffer() const -> const Buffer& {
@@ -45,6 +38,7 @@ public:
 
 private:
     const FrameContext& frame_context_;
+    DescriptorPool descriptor_pool_;
     std::vector<Buffer> uniform_buffers_;
     std::vector<vk::raii::DescriptorSet> descriptor_sets_;
 };

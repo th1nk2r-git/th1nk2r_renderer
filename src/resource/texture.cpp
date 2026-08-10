@@ -1,4 +1,4 @@
-#include "gfx/resource/texture2d.hpp"
+#include "resource/texture.hpp"
 
 #include <limits>
 #include <stdexcept>
@@ -10,7 +10,7 @@ namespace {
         if (format != vk::Format::eR8G8B8A8Unorm &&
             format != vk::Format::eR8G8B8A8Srgb) {
             throw std::invalid_argument(
-                "Texture2D currently requires an RGBA8 UNORM or SRGB format!"
+                "Texture currently requires an RGBA8 UNORM or SRGB format!"
             );
         }
     }
@@ -18,7 +18,7 @@ namespace {
     auto expected_pixel_size(uint32_t width, uint32_t height) -> size_t {
         if (width == 0 || height == 0) {
             throw std::invalid_argument(
-                "Texture2D dimensions must be greater than zero!"
+                "Texture dimensions must be greater than zero!"
             );
         }
 
@@ -28,14 +28,14 @@ namespace {
 
         if (image_width > max_size / image_height) {
             throw std::length_error(
-                "Texture2D pixel count exceeds size_t!"
+                "Texture pixel count exceeds size_t!"
             );
         }
 
         const auto texel_count = image_width * image_height;
         if (texel_count > max_size / rgba8_texel_size) {
             throw std::length_error(
-                "Texture2D pixel byte size exceeds size_t!"
+                "Texture pixel byte size exceeds size_t!"
             );
         }
 
@@ -52,7 +52,7 @@ namespace {
         if (width > properties.limits.maxImageDimension2D ||
             height > properties.limits.maxImageDimension2D) {
             throw std::out_of_range(
-                "Texture2D dimensions exceed the device limit!"
+                "Texture dimensions exceed the device limit!"
             );
         }
 
@@ -65,7 +65,7 @@ namespace {
         if ((format_properties.optimalTilingFeatures & required_features) !=
             required_features) {
             throw std::runtime_error(
-                "Texture2D format does not support sampling and transfer-dst!"
+                "Texture format does not support sampling and transfer-dst!"
             );
         }
     }
@@ -82,7 +82,7 @@ namespace {
         const auto required_size = expected_pixel_size(width, height);
         if (pixels.size() != required_size) {
             throw std::invalid_argument(
-                "Texture2D pixel data size does not match its dimensions!"
+                "Texture pixel data size does not match its dimensions!"
             );
         }
 
@@ -99,7 +99,7 @@ namespace {
     }
 }
 
-Texture2D::Texture2D(
+Texture::Texture(
     const Device& device,
     const GpuAllocator& allocator,
     DataUploader& uploader,

@@ -10,20 +10,27 @@ struct Output {
     [[vk::location(1)]] float2 texcoord;
 };
 
-struct UBO {
-    matrix<float, 4, 4> model;
-    matrix<float, 4, 4> view;
-    matrix<float, 4, 4> proj;
+struct ViewProjection {
+    column_major matrix<float, 4, 4> view;
+    column_major matrix<float, 4, 4> projection;
 }
 
-ConstantBuffer<UBO> ubo : register(b0, space0);
+struct Model {
+    column_major matrix<float, 4, 4> transform;
+}
+
+[[vk::binding(0, 0)]]
+ConstantBuffer<ViewProjection> camera;
+
+[[vk::push_constant]]
+ConstantBuffer<Model> entity;
 
 Output main(Input input) {
     Output output;
     float4 in_pos = float4(input.position, 1.0);
-    float4 world_pos = mul(ubo.model, in_pos);
-    float4 view_pos = mul(ubo.view, world_pos);
-    output.position = mul(ubo.proj, view_pos);
+    float4 world_pos = mul(entity.transform, in_pos);
+    float4 view_pos = mul(camera.view, world_pos);
+    output.position = mul(camera.projection, view_pos);
     output.color = input.color;
     output.texcoord = input.texcoord;
     return output;

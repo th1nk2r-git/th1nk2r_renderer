@@ -86,4 +86,6 @@ RenderPass::RenderPass(
     const Device& device,
     vk::Format color_format,
     vk::Format depth_format
-) : handle(create_render_pass(device, color_format, depth_format)) {}
+) : color_format_(color_format),
+    depth_format_(depth_format),
+    handle_(create_render_pass(device, color_format, depth_format)) {}

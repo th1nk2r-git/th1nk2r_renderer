@@ -8,10 +8,10 @@ struct Output {
 };
 
 [[vk::binding(0, 1)]]
-Texture2D<float4> base_color_texture;
+SamplerState base_color_sampler;
 
 [[vk::binding(1, 1)]]
-SamplerState base_color_sampler;
+Texture2D<float4> base_color_texture;
 
 Output main(Input input) {
     Output output;

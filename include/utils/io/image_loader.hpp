@@ -1,7 +1,7 @@
 #ifndef IMAGE_LOADER_HPP
 #define IMAGE_LOADER_HPP
 
-#include "resource/image_data.hpp"
+#include "utils/data/image.hpp"
 
 #include <cstddef>
 #include <cstdint>

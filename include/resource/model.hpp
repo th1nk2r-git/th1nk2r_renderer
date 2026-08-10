@@ -5,13 +5,12 @@
 #include <span>
 #include <vector>
 
-#include "gfx/resource/mesh.hpp"
-#include "resource/model_data.hpp"
+#include "resource/mesh.hpp"
 
 class Model {
 public:
     Model() = delete;
-    Model(const ModelData& data, const GpuAllocator& allocator, DataUploader& uploader);
+    explicit Model(std::vector<Mesh> meshes);
     ~Model() = default;
 
     Model(const Model&) = delete;

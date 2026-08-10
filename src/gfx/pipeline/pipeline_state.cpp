@@ -26,6 +26,10 @@ auto PipelineState::bind(vk::raii::CommandBuffer& command_buffer) const -> void 
     pipeline_.bind(command_buffer);
 }
 
+auto PipelineState::replace_pipeline(Pipeline pipeline) noexcept -> void {
+    pipeline_ = std::move(pipeline);
+}
+
 auto PipelineState::descriptor_set_layout(uint32_t set) const -> const DescriptorSetLayout& {
     return descriptor_set_layouts_.at(set);
 }

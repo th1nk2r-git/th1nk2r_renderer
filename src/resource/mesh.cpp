@@ -1,4 +1,4 @@
-#include "gfx/resource/mesh.hpp"
+#include "resource/mesh.hpp"
 
 #include <array>
 #include <limits>
@@ -37,9 +37,14 @@ namespace {
     }
 }
 
-Mesh::Mesh(const MeshData& data, const GpuAllocator& allocator, DataUploader& uploader)
+Mesh::Mesh(
+    const MeshData& data,
+    ResourceId<Material> material,
+    const GpuAllocator& allocator,
+    DataUploader& uploader
+)
     : index_count_(checked_index_count(data)),
-      material_index_(data.material_index_),
+      material_(material),
       vertex_buffer_(
           allocator,
           BufferDesc{

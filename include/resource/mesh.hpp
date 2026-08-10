@@ -4,11 +4,20 @@
 #include "gfx/device/gpu_allocator.hpp"
 #include "gfx/device/data_uploader.hpp"
 #include "gfx/resource/buffer.hpp"
-#include "resource/mesh_data.hpp"
+#include "resource/manager/resource_id.hpp"
+#include "utils/data/mesh.hpp"
+#include <cstdint>
+
+class Material;
 
 class Mesh {
 public:
-    Mesh(const MeshData& data, const GpuAllocator& allocator, DataUploader& uploader);
+    Mesh(
+        const MeshData& data,
+        ResourceId<Material> material,
+        const GpuAllocator& allocator,
+        DataUploader& uploader
+    );
 
     Mesh(const Mesh&) = delete;
     auto operator=(const Mesh&) -> Mesh& = delete;
@@ -19,13 +28,17 @@ public:
     auto index_count() const noexcept -> uint32_t {
         return index_count_;
     }
-    auto material_index() const noexcept -> uint32_t {
-        return material_index_;
+    auto material() const noexcept -> ResourceId<Material> {
+        return material_;
+    }
+
+    auto set_material(ResourceId<Material> new_material) noexcept -> void {
+        material_ = new_material;
     }
 
 private:
     uint32_t index_count_ = 0;
-    uint32_t material_index_ = 0;
+    ResourceId<Material> material_;
     Buffer vertex_buffer_;
     Buffer index_buffer_;
 };

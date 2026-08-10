@@ -5,55 +5,41 @@
 #include <utility>
 #include <vector>
 
+#include <glm/mat4x4.hpp>
+
 #include "gfx/pipeline/graphics_pipeline.hpp"
 #include "gfx/pipeline/shader_module.hpp"
-#include "resource/mesh_data.hpp"
+#include "utils/data/mesh.hpp"
 
-auto BasicRenderingPipelineFactory::create(const Device& device, const RenderPass& render_pass) -> PipelineState {
-    vk::DescriptorSetLayoutBinding camera_uniform_binding{};
-    camera_uniform_binding
+auto BasicRenderingPipelineFactory::create_material_descriptor_set_layout(
+    const Device& device
+) -> DescriptorSetLayout {
+    vk::DescriptorSetLayoutBinding sampler_binding{};
+    sampler_binding
         .setBinding(0)
-        .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-        .setDescriptorCount(1)
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex);
-
-    const std::array descriptor_bindings{
-        camera_uniform_binding
-    };
-
-    vk::DescriptorSetLayoutBinding material_texture_binding{};
-    material_texture_binding
-        .setBinding(0)
-        .setDescriptorType(vk::DescriptorType::eSampledImage)
-        .setDescriptorCount(1)
-        .setStageFlags(vk::ShaderStageFlagBits::eFragment);
-
-    vk::DescriptorSetLayoutBinding material_sampler_binding{};
-    material_sampler_binding
-        .setBinding(1)
         .setDescriptorType(vk::DescriptorType::eSampler)
         .setDescriptorCount(1)
         .setStageFlags(vk::ShaderStageFlagBits::eFragment);
 
-    const std::array material_descriptor_bindings{
-        material_texture_binding,
-        material_sampler_binding
+    vk::DescriptorSetLayoutBinding base_color_texture_binding{};
+    base_color_texture_binding
+        .setBinding(1)
+        .setDescriptorType(vk::DescriptorType::eSampledImage)
+        .setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+    const std::array bindings{
+        sampler_binding,
+        base_color_texture_binding
     };
+    return DescriptorSetLayout{device, bindings};
+}
 
-    std::vector<DescriptorSetLayout> descriptor_set_layouts;
-    descriptor_set_layouts.reserve(2);
-    descriptor_set_layouts.emplace_back(device, descriptor_bindings);
-    descriptor_set_layouts.emplace_back(
-        device,
-        material_descriptor_bindings
-    );
-
-    const std::array set_layout_handles{
-        *descriptor_set_layouts[0].get(),
-        *descriptor_set_layouts[1].get()
-    };
-    PipelineLayout pipeline_layout{device, set_layout_handles};
-
+auto BasicRenderingPipelineFactory::create_graphics_pipeline(
+    const Device& device,
+    const RenderPass& render_pass,
+    const PipelineLayout& pipeline_layout
+) -> Pipeline {
     const ShaderModule vertex_shader{device, "./spv/vertex.spv"};
     const ShaderModule fragment_shader{device, "./spv/fragment.spv"};
 
@@ -99,6 +85,57 @@ auto BasicRenderingPipelineFactory::create(const Device& device, const RenderPas
     pipeline_desc.depth_write_enable = true;
 
     auto pipeline = GraphicsPipelineFactory::create(device, pipeline_desc);
+
+    return pipeline;
+}
+
+auto BasicRenderingPipelineFactory::create(
+    const Device& device,
+    const RenderPass& render_pass
+) -> PipelineState {
+    vk::DescriptorSetLayoutBinding camera_uniform_binding{};
+    camera_uniform_binding
+        .setBinding(0)
+        .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+        .setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eVertex);
+
+    const std::array descriptor_bindings{
+        camera_uniform_binding
+    };
+
+    std::vector<DescriptorSetLayout> descriptor_set_layouts;
+    descriptor_set_layouts.reserve(2);
+    descriptor_set_layouts.emplace_back(device, descriptor_bindings);
+    descriptor_set_layouts.emplace_back(
+        create_material_descriptor_set_layout(device)
+    );
+
+    const std::array set_layout_handles{
+        *descriptor_set_layouts[0].get(),
+        *descriptor_set_layouts[1].get()
+    };
+
+    vk::PushConstantRange model_transform_range{};
+    model_transform_range
+        .setStageFlags(vk::ShaderStageFlagBits::eVertex)
+        .setOffset(0)
+        .setSize(sizeof(glm::mat4));
+    const std::array push_constant_ranges{
+        model_transform_range
+    };
+
+    PipelineLayout pipeline_layout{
+        device,
+        set_layout_handles,
+        push_constant_ranges
+    };
+
+    auto pipeline = create_graphics_pipeline(
+        device,
+        render_pass,
+        pipeline_layout
+    );
 
     return PipelineState{
         std::move(descriptor_set_layouts),
