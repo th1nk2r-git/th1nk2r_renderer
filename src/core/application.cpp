@@ -31,6 +31,7 @@ Application::Application()
     ) {
     renderer_.attach_registry(resources_manager_.registry());
     load_models("./assets");
+    camera_controller_.enable(window_);
 }
 
 auto Application::run() -> void {
@@ -66,44 +67,47 @@ auto Application::load_models(const std::filesystem::path& root) -> void {
 }
 
 auto Application::setup_scene() -> void {
-    const auto x_rotation = glm::angleAxis(
-        glm::radians(-90.0F),
-        glm::vec3{1.0F, 0.0F, 0.0F}
-    );
-
-    const auto y_rotation = glm::angleAxis(
-        glm::radians(-90.0F),
-        glm::vec3{0.0F, 1.0F, 0.0F}
-    );
     scene_.create_entity(
-        resources_manager_.query_model("viking_room"),
-        Transform {
-            .position = {1.0F, 0.0F, -3.0F},
-            .rotation = y_rotation * x_rotation
-        }
+        resources_manager_.query_model("sponza"),
+        Transform {}
     );
+}
 
-    scene_.create_entity(
-        resources_manager_.query_model("viking_room"),
-        Transform {
-            .position = {-1.0F, 0.0F, -3.0F},
-            .rotation = y_rotation * x_rotation
-        }
+auto Application::update(float delta_time) -> void {
+    camera_controller_.update(
+        scene_.camera(),
+        window_,
+        delta_time
     );
 }
 
 auto Application::loop() -> void {
+    auto previous_time = glfwGetTime();
+
     while (!window_.should_close()) {
         window_.poll_events();
+
+        const auto current_time = glfwGetTime();
+        const auto delta_time = std::min(
+            static_cast<float>(current_time - previous_time),
+            0.05F
+        );
+        previous_time = current_time;
+
         if (window_.consume_framebuffer_resized()) {
             renderer_.recreate_swapchain(window_);
+            previous_time = glfwGetTime();
             continue;
         }
+
+        update(delta_time);
+
         try {
             renderer_.render(scene_);
         }
         catch (const vk::OutOfDateKHRError&) {
             renderer_.recreate_swapchain(window_);
+            previous_time = glfwGetTime();
         }
     }
     renderer_.wait_idle();
