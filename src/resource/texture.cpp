@@ -1,5 +1,7 @@
 #include "resource/texture.hpp"
 
+#include <algorithm>
+#include <bit>
 #include <limits>
 #include <stdexcept>
 
@@ -60,14 +62,23 @@ namespace {
             device.physical_device().getFormatProperties(format);
         const auto required_features =
             vk::FormatFeatureFlagBits::eSampledImage |
+            vk::FormatFeatureFlagBits::eSampledImageFilterLinear |
+            vk::FormatFeatureFlagBits::eBlitSrc |
+            vk::FormatFeatureFlagBits::eBlitDst |
+            vk::FormatFeatureFlagBits::eTransferSrc |
             vk::FormatFeatureFlagBits::eTransferDst;
 
         if ((format_properties.optimalTilingFeatures & required_features) !=
             required_features) {
             throw std::runtime_error(
-                "Texture format does not support sampling and transfer-dst!"
+                "Texture format does not support sampled linear mipmap blits!"
             );
         }
+    }
+
+
+    auto calculate_mip_levels(uint32_t width, uint32_t height) -> uint32_t {
+        return std::bit_width(std::max(width, height));
     }
 
     auto create_image_desc(
@@ -91,9 +102,10 @@ namespace {
         return ImageDesc{
             .format = format,
             .extent = vk::Extent3D{width, height, 1},
-            .mip_levels = 1,
+            .mip_levels = calculate_mip_levels(width, height),
             .array_layers = 1,
-            .usage = vk::ImageUsageFlagBits::eTransferDst |
+            .usage = vk::ImageUsageFlagBits::eTransferSrc |
+                     vk::ImageUsageFlagBits::eTransferDst |
                      vk::ImageUsageFlagBits::eSampled
         };
     }
@@ -107,8 +119,7 @@ Texture::Texture(
     uint32_t height,
     std::span<const std::byte> pixels,
     vk::Format format
-)
-    : image_(
+) : image_(
           allocator,
           create_image_desc(
               device,
@@ -126,13 +137,14 @@ Texture::Texture(
               .aspect_flags = vk::ImageAspectFlagBits::eColor,
               .view_type = vk::ImageViewType::e2D,
               .base_mip_level = 0,
-              .level_count = 1,
+              .level_count = image_.mip_levels(),
               .base_array_layer = 0,
               .layer_count = 1
           }
       ) {
     ImageUploadDesc upload_desc{};
     upload_desc.extent = vk::Extent3D{width, height, 1};
+    upload_desc.generate_mipmaps = image_.mip_levels() > 1;
 
     uploader.enqueue_image(
         pixels,

@@ -25,9 +25,9 @@ struct ImageUploadDesc {
         1
     };
     vk::ImageLayout final_layout = vk::ImageLayout::eShaderReadOnlyOptimal;
-    vk::PipelineStageFlags destination_stage =
-        vk::PipelineStageFlagBits::eFragmentShader;
+    vk::PipelineStageFlags destination_stage = vk::PipelineStageFlagBits::eFragmentShader;
     vk::AccessFlags destination_access = vk::AccessFlagBits::eShaderRead;
+    bool generate_mipmaps = false;
 };
 
 class DataUploader {
@@ -62,8 +62,7 @@ public:
 
     // return true if the pending uploads is empty
     auto empty() const noexcept -> bool {
-        return pending_buffer_uploads_.empty() &&
-               pending_image_uploads_.empty();
+        return pending_buffer_uploads_.empty() && pending_image_uploads_.empty();
     }
 
     // return true if the data uploader is valid
@@ -90,6 +89,8 @@ private:
         vk::ImageLayout final_layout = vk::ImageLayout::eUndefined;
         vk::PipelineStageFlags destination_stage{};
         vk::AccessFlags destination_access{};
+        bool generate_mipmaps = false;
+        uint32_t mip_levels = 1;
     };
 
     const Device* device_ = nullptr;

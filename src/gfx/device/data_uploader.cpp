@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "gfx/command/command_context.hpp"
+#include "gfx/command/mipmap_generator.hpp"
 
 namespace {
     auto mip_dimension(uint32_t dimension, uint32_t mip_level) -> uint32_t {
@@ -84,29 +85,61 @@ namespace {
             offset_z > mip_extent.depth ||
             desc.extent.depth > mip_extent.depth - offset_z) {
             throw std::out_of_range(
-                "image upload region exceeds the destination subresource!");
+                "image upload region exceeds the destination subresource!"
+            );
         }
 
         if (desc.final_layout == vk::ImageLayout::eUndefined ||
             desc.final_layout == vk::ImageLayout::ePreinitialized) {
             throw std::invalid_argument(
-                "image upload requires a usable final layout!");
+                "image upload requires a usable final layout!"
+            );
         }
 
         if (!desc.destination_stage) {
             throw std::invalid_argument(
-                "image upload requires a destination pipeline stage!");
+                "image upload requires a destination pipeline stage!"
+            );
         }
 
         if (!desc.destination_access) {
             throw std::invalid_argument(
-                "image upload requires a destination access mask!");
+                "image upload requires a destination access mask!"
+            );
+        }
+
+        if (desc.generate_mipmaps) {
+            if (!(destination.usage() &
+                  vk::ImageUsageFlagBits::eTransferSrc)) {
+                throw std::invalid_argument(
+                    "mipmap generation requires transfer-src usage!"
+                );
+            }
+
+            if (destination.mip_levels() < 2) {
+                throw std::invalid_argument(
+                    "mipmap generation requires more than one mip level!"
+                );
+            }
+
+            if (desc.subresource.mipLevel != 0 ||
+                desc.destination_offset != vk::Offset3D{} ||
+                desc.extent != destination.extent()) {
+                throw std::invalid_argument(
+                    "mipmap generation requires a full level-zero upload!"
+                );
+            }
+
+            if (desc.extent.depth != 1) {
+                throw std::invalid_argument(
+                    "mipmap generation currently supports only 2D images!"
+                );
+            }
         }
     }
 
-    auto subresource_range(
-        const vk::ImageSubresourceLayers& subresource) -> vk::ImageSubresourceRange {
-        return vk::ImageSubresourceRange {
+    auto subresource_range(const vk::ImageSubresourceLayers& subresource) -> vk::ImageSubresourceRange {
+        return vk::ImageSubresourceRange{
             subresource.aspectMask,
             subresource.mipLevel,
             1,
@@ -114,19 +147,17 @@ namespace {
             subresource.layerCount
         };
     }
+
 }
 
 DataUploader::DataUploader(const Device& device, const GpuAllocator& allocator)
     : device_(&device), allocator_(&allocator) {}
 
-auto DataUploader::enqueue_buffer(
-    const void* data,
-    vk::DeviceSize size,
-    const Buffer& destination,
-    const BufferUploadDesc& desc) -> void {
+auto DataUploader::enqueue_buffer(const void* data, vk::DeviceSize size, const Buffer& destination, const BufferUploadDesc& desc) -> void {
     if (!valid()) {
         throw std::logic_error(
-            "data uploader is not initialized!");
+            "data uploader is not initialized!"
+        );
     }
 
     if (size == 0) {
@@ -135,28 +166,33 @@ auto DataUploader::enqueue_buffer(
 
     if (data == nullptr) {
         throw std::invalid_argument(
-            "buffer upload source cannot be null!");
+            "buffer upload source cannot be null!"
+        );
     }
 
     if (!destination.get()) {
         throw std::invalid_argument(
-            "buffer upload requires a valid destination!");
+            "buffer upload requires a valid destination!"
+        );
     }
 
     if (desc.destination_offset > destination.size() ||
         size > destination.size() - desc.destination_offset) {
         throw std::out_of_range(
-            "buffer upload exceeds the destination size!");
+            "buffer upload exceeds the destination size!"
+        );
     }
 
     if (!desc.destination_stage) {
         throw std::invalid_argument(
-            "buffer upload requires a destination pipeline stage!");
+            "buffer upload requires a destination pipeline stage!"
+        );
     }
 
     if (!desc.destination_access) {
         throw std::invalid_argument(
-            "buffer upload requires a destination access mask!");
+            "buffer upload requires a destination access mask!"
+        );
     }
 
     Buffer staging{
@@ -164,9 +200,7 @@ auto DataUploader::enqueue_buffer(
         BufferDesc{
             .size = size,
             .usage = vk::BufferUsageFlagBits::eTransferSrc,
-            .memory = BufferMemoryUsage::Upload
-        }
-    };
+            .memory = BufferMemoryUsage::Upload}};
 
     staging.write(data, size);
     pending_buffer_uploads_.push_back(
@@ -176,9 +210,7 @@ auto DataUploader::enqueue_buffer(
             .destination_offset = desc.destination_offset,
             .size = size,
             .destination_stage = desc.destination_stage,
-            .destination_access = desc.destination_access
-        }
-    );
+            .destination_access = desc.destination_access});
 }
 
 auto DataUploader::enqueue_image(
@@ -196,9 +228,7 @@ auto DataUploader::enqueue_image(
 
     validate_image_upload(destination, desc);
 
-    if (data.size() >
-        static_cast<size_t>(
-            std::numeric_limits<vk::DeviceSize>::max())) {
+    if (data.size() > static_cast<size_t>(std::numeric_limits<vk::DeviceSize>::max())) {
         throw std::length_error(
             "image upload source exceeds VkDeviceSize!");
     }
@@ -209,9 +239,7 @@ auto DataUploader::enqueue_image(
         BufferDesc{
             .size = data_size,
             .usage = vk::BufferUsageFlagBits::eTransferSrc,
-            .memory = BufferMemoryUsage::Upload
-        }
-    };
+            .memory = BufferMemoryUsage::Upload}};
     staging.write(data.data(), data_size);
 
     pending_image_uploads_.push_back(
@@ -223,15 +251,16 @@ auto DataUploader::enqueue_image(
             .subresource = desc.subresource,
             .final_layout = desc.final_layout,
             .destination_stage = desc.destination_stage,
-            .destination_access = desc.destination_access
-        }
-    );
+            .destination_access = desc.destination_access,
+            .generate_mipmaps = desc.generate_mipmaps,
+            .mip_levels = destination.mip_levels()});
 }
 
 auto DataUploader::submit_and_wait() -> void {
     if (!valid()) {
         throw std::logic_error(
-            "data uploader is not initialized!");
+            "data uploader is not initialized!"
+        );
     }
 
     if (empty()) {
@@ -241,7 +270,8 @@ auto DataUploader::submit_and_wait() -> void {
     CommandContext command_context{
         *device_,
         device_->graphics_family(),
-        1};
+        1
+    };
 
     command_context.record(
         [&](vk::raii::CommandBuffer& command_buffer) {
@@ -259,7 +289,8 @@ auto DataUploader::submit_and_wait() -> void {
                     .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                     .setImage(upload.destination)
                     .setSubresourceRange(
-                        subresource_range(upload.subresource));
+                        subresource_range(upload.subresource)
+                    );
                 transfer_barriers.push_back(barrier);
             }
 
@@ -270,7 +301,8 @@ auto DataUploader::submit_and_wait() -> void {
                     {},
                     {},
                     {},
-                    transfer_barriers);
+                    transfer_barriers
+                );
             }
 
             std::vector<vk::BufferMemoryBarrier> buffer_barriers;
@@ -291,12 +323,14 @@ auto DataUploader::submit_and_wait() -> void {
                 command_buffer.copyBuffer(
                     upload.staging.get(),
                     upload.destination,
-                    copy_region);
+                    copy_region
+                );
 
                 vk::BufferMemoryBarrier barrier{};
                 barrier
                     .setSrcAccessMask(
-                        vk::AccessFlagBits::eTransferWrite)
+                        vk::AccessFlagBits::eTransferWrite
+                    )
                     .setDstAccessMask(upload.destination_access)
                     .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                     .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
@@ -322,33 +356,55 @@ auto DataUploader::submit_and_wait() -> void {
                     upload.staging.get(),
                     upload.destination,
                     vk::ImageLayout::eTransferDstOptimal,
-                    copy_region);
+                    copy_region
+                );
+                if (upload.generate_mipmaps) {
+                    record_mipmap_generation(
+                        command_buffer,
+                        MipmapGenerationDesc{
+                            .image = upload.destination,
+                            .base_extent = upload.extent,
+                            .aspect_mask = upload.subresource.aspectMask,
+                            .base_array_layer =
+                                upload.subresource.baseArrayLayer,
+                            .layer_count = upload.subresource.layerCount,
+                            .mip_levels = upload.mip_levels,
+                            .final_layout = upload.final_layout,
+                            .destination_stage = upload.destination_stage,
+                            .destination_access = upload.destination_access,
+                            .filter = vk::Filter::eLinear
+                        }
+                    );
+                }
+                else {
+                    vk::ImageMemoryBarrier barrier{};
+                    barrier
+                        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+                        .setDstAccessMask(upload.destination_access)
+                        .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+                        .setNewLayout(upload.final_layout)
+                        .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                        .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                        .setImage(upload.destination)
+                        .setSubresourceRange(
+                            subresource_range(upload.subresource));
+                    image_barriers.push_back(barrier);
 
-                vk::ImageMemoryBarrier barrier{};
-                barrier
-                    .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-                    .setDstAccessMask(upload.destination_access)
-                    .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
-                    .setNewLayout(upload.final_layout)
-                    .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                    .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                    .setImage(upload.destination)
-                    .setSubresourceRange(
-                        subresource_range(upload.subresource));
-                image_barriers.push_back(barrier);
-
-                destination_stages |= upload.destination_stage;
+                    destination_stages |= upload.destination_stage;
+                }
             }
 
-            command_buffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eTransfer,
-                destination_stages,
-                {},
-                {},
-                buffer_barriers,
-                image_barriers);
-        }
-    );
+            if (!buffer_barriers.empty() || !image_barriers.empty()) {
+                command_buffer.pipelineBarrier(
+                    vk::PipelineStageFlagBits::eTransfer,
+                    destination_stages,
+                    {},
+                    {},
+                    buffer_barriers,
+                    image_barriers
+                );
+            }
+        });
 
     const vk::CommandBuffer command_buffer = *command_context.command_buffers()[0];
 

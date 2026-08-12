@@ -10,6 +10,14 @@
 #include <utility>
 
 namespace {
+    auto create_sampler_desc(const Texture& texture) -> SamplerDesc {
+        SamplerDesc desc{};
+        desc.max_lod = static_cast<float>(
+            texture.image().mip_levels() - 1
+        );
+        return desc;
+    }
+
     auto color_byte(float value) noexcept -> std::byte {
         if (!std::isfinite(value)) {
             value = 0.0F;
@@ -130,7 +138,7 @@ Material::Material(
             uploader
         )
     ),
-    sampler_(device, SamplerDesc{}),
+    sampler_(device, create_sampler_desc(*base_color_texture_)),
     descriptor_set_(
         allocate_descriptor_set(
             device,
