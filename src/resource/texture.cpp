@@ -1,4 +1,4 @@
-#include "resource/texture.hpp"
+#include "resource/gpu/texture.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -61,17 +61,12 @@ namespace {
         const auto format_properties =
             device.physical_device().getFormatProperties(format);
         const auto required_features =
-            vk::FormatFeatureFlagBits::eSampledImage |
-            vk::FormatFeatureFlagBits::eSampledImageFilterLinear |
-            vk::FormatFeatureFlagBits::eBlitSrc |
-            vk::FormatFeatureFlagBits::eBlitDst |
-            vk::FormatFeatureFlagBits::eTransferSrc |
-            vk::FormatFeatureFlagBits::eTransferDst;
+            vk::FormatFeatureFlagBits::eSampledImage;
 
         if ((format_properties.optimalTilingFeatures & required_features) !=
             required_features) {
             throw std::runtime_error(
-                "Texture format does not support sampled linear mipmap blits!"
+                "Texture format does not support sampled images!"
             );
         }
     }
@@ -109,12 +104,38 @@ namespace {
                      vk::ImageUsageFlagBits::eSampled
         };
     }
+
+    auto create_image_view(
+        const Device& device,
+        const Image& image,
+        vk::Format format
+    ) -> vk::raii::ImageView {
+        vk::ImageViewCreateInfo create_info{};
+        create_info
+            .setImage(image.get())
+            .setViewType(vk::ImageViewType::e2D)
+            .setFormat(format)
+            .setComponents(vk::ComponentMapping{
+                vk::ComponentSwizzle::eIdentity,
+                vk::ComponentSwizzle::eIdentity,
+                vk::ComponentSwizzle::eIdentity,
+                vk::ComponentSwizzle::eIdentity
+            })
+            .setSubresourceRange(vk::ImageSubresourceRange{
+                vk::ImageAspectFlagBits::eColor,
+                0,
+                image.mip_levels(),
+                0,
+                1
+            });
+        return device.logical_device().createImageView(create_info);
+    }
 }
 
 Texture::Texture(
     const Device& device,
-    const GpuAllocator& allocator,
-    DataUploader& uploader,
+    const MemoryAllocator& allocator,
+    ImageUploader& uploader,
     uint32_t width,
     uint32_t height,
     std::span<const std::byte> pixels,
@@ -129,24 +150,12 @@ Texture::Texture(
               format
           )
       ),
-      image_view_(
-          device,
-          ImageViewDesc{
-              .image = image_.get(),
-              .format = format,
-              .aspect_flags = vk::ImageAspectFlagBits::eColor,
-              .view_type = vk::ImageViewType::e2D,
-              .base_mip_level = 0,
-              .level_count = image_.mip_levels(),
-              .base_array_layer = 0,
-              .layer_count = 1
-          }
-      ) {
+      image_view_(create_image_view(device, image_, format)) {
     ImageUploadDesc upload_desc{};
     upload_desc.extent = vk::Extent3D{width, height, 1};
     upload_desc.generate_mipmaps = image_.mip_levels() > 1;
 
-    uploader.enqueue_image(
+    uploader.enqueue(
         pixels,
         image_,
         upload_desc

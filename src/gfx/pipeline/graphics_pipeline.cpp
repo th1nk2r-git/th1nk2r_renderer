@@ -4,7 +4,10 @@
 #include <stdexcept>
 #include <utility>
 
-auto GraphicsPipelineFactory::create(const Device& device, const GraphicsPipelineDesc& desc) -> Pipeline {
+auto GraphicsPipelineFactory::create(
+    const Device& device,
+    const GraphicsPipelineDesc& desc
+) -> vk::raii::Pipeline {
     if (desc.vertex_shader == nullptr) {
         throw std::invalid_argument("graphics pipeline requires a vertex shader!");
     }
@@ -21,11 +24,11 @@ auto GraphicsPipelineFactory::create(const Device& device, const GraphicsPipelin
     std::array<vk::PipelineShaderStageCreateInfo, 2> shader_stages{};
     shader_stages[0]
         .setStage(vk::ShaderStageFlagBits::eVertex)
-        .setModule(desc.vertex_shader->get())
+        .setModule(**desc.vertex_shader)
         .setPName("main");
     shader_stages[1]
         .setStage(vk::ShaderStageFlagBits::eFragment)
-        .setModule(desc.fragment_shader->get())
+        .setModule(**desc.fragment_shader)
         .setPName("main");
 
     vk::PipelineVertexInputStateCreateInfo vertex_input_state{};
@@ -108,8 +111,8 @@ auto GraphicsPipelineFactory::create(const Device& device, const GraphicsPipelin
         .setPDepthStencilState(&depth_stencil_state)
         .setPColorBlendState(&color_blend_state)
         .setPDynamicState(&dynamic_state)
-        .setLayout(desc.layout->get())
-        .setRenderPass(desc.render_pass->get())
+        .setLayout(**desc.layout)
+        .setRenderPass(**desc.render_pass)
         .setSubpass(desc.subpass);
 
     auto handle = device.logical_device().createGraphicsPipeline(
@@ -117,8 +120,5 @@ auto GraphicsPipelineFactory::create(const Device& device, const GraphicsPipelin
         create_info
     );
 
-    return Pipeline{
-        std::move(handle),
-        vk::PipelineBindPoint::eGraphics
-    };
+    return handle;
 }

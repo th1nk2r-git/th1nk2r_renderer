@@ -1,4 +1,4 @@
-#include "resource/model.hpp"
+#include "resource/gpu/model.hpp"
 
 #include <stdexcept>
 #include <utility>

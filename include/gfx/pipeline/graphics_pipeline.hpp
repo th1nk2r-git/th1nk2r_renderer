@@ -1,18 +1,16 @@
 #ifndef GRAPHICS_PIPELINE_HPP
 #define GRAPHICS_PIPELINE_HPP
 
+#include <vector>
+
 #include "gfx/device/device.hpp"
-#include "gfx/swapchain/render_pass.hpp"
-#include "gfx/pipeline/shader_module.hpp"
-#include "gfx/pipeline/pipeline_layout.hpp"
-#include "gfx/pipeline/pipeline.hpp"
 
 struct GraphicsPipelineDesc {
-    const ShaderModule* vertex_shader = nullptr;
-    const ShaderModule* fragment_shader = nullptr;
+    const vk::raii::ShaderModule* vertex_shader = nullptr;
+    const vk::raii::ShaderModule* fragment_shader = nullptr;
 
-    const PipelineLayout* layout = nullptr;
-    const RenderPass* render_pass = nullptr;
+    const vk::raii::PipelineLayout* layout = nullptr;
+    const vk::raii::RenderPass* render_pass = nullptr;
     uint32_t subpass = 0;
 
     std::vector<vk::VertexInputBindingDescription> vertex_bindings;
@@ -34,10 +32,11 @@ struct GraphicsPipelineDesc {
     bool blend_enable = false;
 };
 
-class GraphicsPipelineFactory {
-public:
-    // create a graphics pipeline
-    static auto create(const Device& device, const GraphicsPipelineDesc& desc) -> Pipeline;
-};
+namespace GraphicsPipelineFactory {
+    auto create(
+        const Device& device,
+        const GraphicsPipelineDesc& desc
+    ) -> vk::raii::Pipeline;
+}
 
 #endif

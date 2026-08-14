@@ -7,7 +7,10 @@
 #include <utility>
 #include <vector>
 
-Device::Device(const Instance& instance, const Surface& surface)
+Device::Device(
+    const vk::raii::Instance& instance,
+    const vk::raii::SurfaceKHR& surface
+)
     : Device(select_physical_device(instance, surface)) {}
 
 Device::Device(SelectedPhysicalDevice selected)
@@ -19,10 +22,10 @@ Device::Device(SelectedPhysicalDevice selected)
       present_queue_(logical_device_.getQueue(present_family_, 0)) {}
 
 auto Device::select_physical_device(
-    const Instance& instance,
-    const Surface& surface
+    const vk::raii::Instance& instance,
+    const vk::raii::SurfaceKHR& surface
 ) -> SelectedPhysicalDevice {
-    auto physical_devices = instance.get().enumeratePhysicalDevices();
+    auto physical_devices = instance.enumeratePhysicalDevices();
 
     for (auto& physical_device : physical_devices) {
         if (physical_device.getProperties().apiVersion < vk::ApiVersion14) {
@@ -37,8 +40,8 @@ auto Device::select_physical_device(
             continue;
         }
 
-        const auto available_formats = physical_device.getSurfaceFormatsKHR(surface.get());
-        const auto available_present_modes = physical_device.getSurfacePresentModesKHR(surface.get());
+        const auto available_formats = physical_device.getSurfaceFormatsKHR(*surface);
+        const auto available_present_modes = physical_device.getSurfacePresentModesKHR(*surface);
         if (available_formats.empty() || available_present_modes.empty()) {
             continue;
         }
@@ -63,7 +66,7 @@ auto Device::select_physical_device(
 
 auto Device::find_queue_families(
     const vk::raii::PhysicalDevice& physical_device,
-    const Surface& surface
+    const vk::raii::SurfaceKHR& surface
 ) -> std::optional<QueueFamilies> {
     const auto properties = physical_device.getQueueFamilyProperties();
     std::optional<uint32_t> graphics_family;
@@ -73,7 +76,7 @@ auto Device::find_queue_families(
         if (properties[index].queueFlags & vk::QueueFlagBits::eGraphics) {
             graphics_family = index;
         }
-        if (physical_device.getSurfaceSupportKHR(index, surface.get())) {
+        if (physical_device.getSurfaceSupportKHR(index, *surface)) {
             present_family = index;
         }
         if (graphics_family.has_value() && present_family.has_value()) {

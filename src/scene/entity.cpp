@@ -3,10 +3,15 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include <stdexcept>
 #include <utility>
 
-Entity::Entity(const Model& model, Transform transform) noexcept
-    : model_(model), transform_(std::move(transform)) {}
+Entity::Entity(ResourceId<Model> model, Transform transform)
+    : model_id_(model), transform_(std::move(transform)) {
+    if (!model_id_.valid()) {
+        throw std::invalid_argument("entity model resource id is invalid");
+    }
+}
 
 auto Entity::set_transform(Transform transform) noexcept -> void {
     transform_ = std::move(transform);

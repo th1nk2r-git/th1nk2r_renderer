@@ -1,4 +1,4 @@
-#include "resource/material.hpp"
+#include "resource/gpu/material.hpp"
 
 #include <algorithm>
 #include <array>
@@ -7,17 +7,10 @@
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
-#include <utility>
+#include <string>
+#include <string_view>
 
 namespace {
-    auto create_sampler_desc(const Texture& texture) -> SamplerDesc {
-        SamplerDesc desc{};
-        desc.max_lod = static_cast<float>(
-            texture.image().mip_levels() - 1
-        );
-        return desc;
-    }
-
     auto color_byte(float value) noexcept -> std::byte {
         if (!std::isfinite(value)) {
             value = 0.0F;
@@ -28,28 +21,51 @@ namespace {
         );
     }
 
+    auto create_texture(
+        const std::optional<ImageData>& image_data,
+        const Device& device,
+        const MemoryAllocator& allocator,
+        ImageUploader& uploader,
+        vk::Format format,
+        std::string_view role
+    ) -> std::unique_ptr<Texture> {
+        if (!image_data) {
+            return nullptr;
+        }
+
+        const auto& image = *image_data;
+        if (image.channels != 4) {
+            throw std::invalid_argument(
+                "material " + std::string{role} +
+                " texture must contain RGBA8 pixels"
+            );
+        }
+        return std::make_unique<Texture>(
+            device,
+            allocator,
+            uploader,
+            image.width,
+            image.height,
+            image.pixels,
+            format
+        );
+    }
+
     auto create_base_color_texture(
         const MaterialData& data,
         const Device& device,
-        const GpuAllocator& allocator,
-        DataUploader& uploader
+        const MemoryAllocator& allocator,
+        ImageUploader& uploader
     ) -> std::unique_ptr<Texture> {
-        if (data.base_color_texture_) {
-            const auto& image = *data.base_color_texture_;
-            if (image.channels != 4) {
-                throw std::invalid_argument(
-                    "material base color texture must contain RGBA8 pixels"
-                );
-            }
-            return std::make_unique<Texture>(
+        if (auto texture = create_texture(
+                data.base_color_texture_,
                 device,
                 allocator,
                 uploader,
-                image.width,
-                image.height,
-                image.pixels,
-                vk::Format::eR8G8B8A8Srgb
-            );
+                vk::Format::eR8G8B8A8Srgb,
+                "base color"
+            )) {
+            return texture;
         }
 
         const std::array pixels{
@@ -69,67 +85,13 @@ namespace {
         );
     }
 
-    auto allocate_descriptor_set(
-        const Device& device,
-        DescriptorPool& descriptor_pool,
-        const DescriptorSetLayout& descriptor_set_layout
-    ) -> vk::raii::DescriptorSet {
-        const std::array layouts{
-            *descriptor_set_layout.get()
-        };
-        auto descriptor_sets = descriptor_pool.allocate_sets(
-            device,
-            layouts
-        );
-
-        if (descriptor_sets.size() != 1) {
-            throw std::runtime_error(
-                "material descriptor allocation returned an unexpected count"
-            );
-        }
-
-        return std::move(descriptor_sets.front());
-    }
-
-    auto write_descriptors(
-        const Device& device,
-        const vk::raii::DescriptorSet& descriptor_set,
-        const Texture& base_color_texture,
-        const Sampler& sampler
-    ) -> void {
-        vk::DescriptorImageInfo texture_info{};
-        texture_info
-            .setImageView(*base_color_texture.image_view().get())
-            .setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
-
-        vk::DescriptorImageInfo sampler_info{};
-        sampler_info.setSampler(*sampler.get());
-
-        std::array<vk::WriteDescriptorSet, 2> writes{};
-        writes[0]
-            .setDstSet(*descriptor_set)
-            .setDstBinding(0)
-            .setDstArrayElement(0)
-            .setDescriptorType(vk::DescriptorType::eSampler)
-            .setImageInfo(sampler_info);
-        writes[1]
-            .setDstSet(*descriptor_set)
-            .setDstBinding(1)
-            .setDstArrayElement(0)
-            .setDescriptorType(vk::DescriptorType::eSampledImage)
-            .setImageInfo(texture_info);
-
-        device.logical_device().updateDescriptorSets(writes, {});
-    }
 }
 
 Material::Material(
     const MaterialData& data,
     const Device& device,
-    const GpuAllocator& allocator,
-    DataUploader& uploader,
-    DescriptorPool& descriptor_pool,
-    const DescriptorSetLayout& descriptor_set_layout
+    const MemoryAllocator& allocator,
+    ImageUploader& uploader
 ) : base_color_texture_(
         create_base_color_texture(
             data,
@@ -138,18 +100,43 @@ Material::Material(
             uploader
         )
     ),
-    sampler_(device, create_sampler_desc(*base_color_texture_)),
-    descriptor_set_(
-        allocate_descriptor_set(
+    metallic_roughness_texture_(
+        create_texture(
+            data.metallic_roughness_texture_,
             device,
-            descriptor_pool,
-            descriptor_set_layout
+            allocator,
+            uploader,
+            vk::Format::eR8G8B8A8Unorm,
+            "metallic-roughness"
         )
-    ) {
-    write_descriptors(
-        device,
-        descriptor_set_,
-        *base_color_texture_,
-        sampler_
-    );
-}
+    ),
+    normal_texture_(
+        create_texture(
+            data.normal_texture_,
+            device,
+            allocator,
+            uploader,
+            vk::Format::eR8G8B8A8Unorm,
+            "normal"
+        )
+    ),
+    occlusion_texture_(
+        create_texture(
+            data.occlusion_texture_,
+            device,
+            allocator,
+            uploader,
+            vk::Format::eR8G8B8A8Unorm,
+            "occlusion"
+        )
+    ),
+    emissive_texture_(
+        create_texture(
+            data.emissive_texture_,
+            device,
+            allocator,
+            uploader,
+            vk::Format::eR8G8B8A8Srgb,
+            "emissive"
+        )
+    ) {}

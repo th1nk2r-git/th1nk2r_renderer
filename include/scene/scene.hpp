@@ -7,7 +7,7 @@
 
 #include "scene/camera.hpp"
 #include "scene/entity.hpp"
-#include "resource/manager/resource_id.hpp"
+#include "resource/gpu/resource_id.hpp"
 
 class Scene {
 public:
@@ -41,7 +41,7 @@ public:
     }
 
     auto create_entity(
-        const Model& model,
+        ResourceId<Model> model,
         Transform transform
     ) -> Entity&;
     auto clear_entities() noexcept -> void;

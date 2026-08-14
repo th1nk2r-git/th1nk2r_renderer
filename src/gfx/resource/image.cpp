@@ -16,7 +16,7 @@ namespace {
     }
 
     auto validate_image_desc(
-        const GpuAllocator& allocator,
+        const MemoryAllocator& allocator,
         const ImageDesc& desc
     ) -> void {
         if (allocator.get() == nullptr) {
@@ -91,7 +91,7 @@ namespace {
     }
 }
 
-Image::Image(const GpuAllocator& allocator, const ImageDesc& desc) {
+Image::Image(const MemoryAllocator& allocator, const ImageDesc& desc) {
     validate_image_desc(allocator, desc);
 
     VkImageCreateInfo image_info{};

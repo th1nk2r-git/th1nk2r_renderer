@@ -16,7 +16,7 @@ namespace {
     }
 }
 
-Buffer::Buffer(const GpuAllocator& allocator, const BufferDesc& desc) {
+Buffer::Buffer(const MemoryAllocator& allocator, const BufferDesc& desc) {
     if (allocator.get() == nullptr) {
         throw std::invalid_argument(
             "buffer requires a valid GPU allocator!"
@@ -86,6 +86,7 @@ Buffer::Buffer(const GpuAllocator& allocator, const BufferDesc& desc) {
     handle_ = new_handle;
     allocation_ = new_allocation;
     size_ = desc.size;
+    usage_ = desc.usage;
     mapped_data_ = allocation_info.pMappedData;
 }
 
@@ -104,6 +105,7 @@ Buffer::Buffer(Buffer&& other) noexcept
       handle_(std::exchange(other.handle_, VK_NULL_HANDLE)),
       allocation_(std::exchange(other.allocation_, nullptr)),
       size_(std::exchange(other.size_, 0)),
+      usage_(std::exchange(other.usage_, vk::BufferUsageFlags{})),
       mapped_data_(std::exchange(other.mapped_data_, nullptr)) {
 }
 
@@ -124,6 +126,7 @@ auto Buffer::operator=(Buffer&& other) noexcept -> Buffer& {
     handle_ = std::exchange(other.handle_, VK_NULL_HANDLE);
     allocation_ = std::exchange(other.allocation_, nullptr);
     size_ = std::exchange(other.size_, 0);
+    usage_ = std::exchange(other.usage_, vk::BufferUsageFlags{});
     mapped_data_ = std::exchange(other.mapped_data_, nullptr);
 
     return *this;

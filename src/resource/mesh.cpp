@@ -1,4 +1,4 @@
-#include "resource/mesh.hpp"
+#include "resource/gpu/mesh.hpp"
 
 #include <array>
 #include <limits>
@@ -40,8 +40,8 @@ namespace {
 Mesh::Mesh(
     const MeshData& data,
     ResourceId<Material> material,
-    const GpuAllocator& allocator,
-    DataUploader& uploader
+    const MemoryAllocator& allocator,
+    BufferUploader& uploader
 )
     : index_count_(checked_index_count(data)),
       material_(material),
@@ -63,7 +63,7 @@ Mesh::Mesh(
               .memory = BufferMemoryUsage::GpuOnly
             }
         ) {
-    uploader.enqueue_buffer(
+    uploader.enqueue(
         data.vertices_.data(),
         vertex_buffer_.size(),
         vertex_buffer_,
@@ -74,7 +74,7 @@ Mesh::Mesh(
                 vk::AccessFlagBits::eVertexAttributeRead
         }
     );
-    uploader.enqueue_buffer(
+    uploader.enqueue(
         data.indices_.data(),
         index_buffer_.size(),
         index_buffer_,

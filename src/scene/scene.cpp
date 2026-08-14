@@ -7,7 +7,7 @@ auto Scene::set_camera(Camera&& camera) noexcept -> void {
 }
 
 auto Scene::create_entity(
-    const Model& model,
+    ResourceId<Model> model,
     Transform transform
 ) -> Entity& {
     entities_.emplace_back(model, std::move(transform));

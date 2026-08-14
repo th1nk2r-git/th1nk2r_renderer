@@ -2,11 +2,14 @@
 #define APPLICATION_HPP
 
 #include <filesystem>
+#include <vector>
 
-#include "core/camera_controller.hpp"
+#include "core/input/input_system.hpp"
+#include "gfx/device/device_context.hpp"
 #include "platform/window.hpp"
+#include "render/pass/forward/forward_pass.hpp"
 #include "render/renderer.hpp"
-#include "resource/manager/resource_manager.hpp"
+#include "resource/registry/resource_registry.hpp"
 #include "scene/scene.hpp"
 
 class Application {
@@ -25,12 +28,14 @@ private:
     Scene scene_;
 
     Window window_;
+    DeviceContext device_context_;
     Renderer renderer_;
-    ResourceManager resources_manager_;
-    CameraController camera_controller_;
+    ForwardPass forward_pass_;
+    ResourceRegistry registry_;
+    InputSystem input_system_;
 
     // load the models
-    auto load_models(const std::filesystem::path& root) -> void;
+    auto load_models(const std::filesystem::path& root) -> std::vector<ResourceId<Material>>;
 
     // setup the main scene
     auto setup_scene() -> void;

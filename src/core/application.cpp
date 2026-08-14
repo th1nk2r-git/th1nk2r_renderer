@@ -2,8 +2,20 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <stdexcept>
 #include <string>
+#include <unordered_set>
+#include <utility>
 #include <vector>
+
+#include "io/model_loader.hpp"
+#include "resource/gpu/material.hpp"
+#include "resource/gpu/mesh.hpp"
+#include "resource/gpu/model.hpp"
 
 namespace {
     auto make_model_name(
@@ -16,30 +28,78 @@ namespace {
         }
         return relative_directory.generic_string();
     }
+
+    auto load_model(
+        const std::filesystem::path& path,
+        DeviceContext& device_context,
+        ResourceRegistry& registry
+    ) -> Model {
+        const auto data = ::load_model(path);
+        if (data.material_.empty()) {
+            throw std::runtime_error(
+                "loaded model does not contain a local material list"
+            );
+        }
+
+        std::vector<std::optional<ResourceId<Material>>> material_ids(
+            data.material_.size()
+        );
+        std::vector<Mesh> meshes;
+        meshes.reserve(data.meshes_.size());
+
+        for (const auto& mesh_data : data.meshes_) {
+            const auto material_index = mesh_data.material_index_;
+            if (material_index >= data.material_.size()) {
+                throw std::out_of_range(
+                    "mesh local material index is out of range"
+                );
+            }
+
+            auto& material_id = material_ids[material_index];
+            if (!material_id) {
+                auto material = std::make_unique<Material>(
+                    data.material_[material_index],
+                    device_context.device(),
+                    device_context.allocator(),
+                    device_context.image_uploader()
+                );
+                material_id = registry.add(std::move(material));
+            }
+
+            meshes.emplace_back(
+                mesh_data,
+                *material_id,
+                device_context.allocator(),
+                device_context.buffer_uploader()
+            );
+        }
+
+        return Model{std::move(meshes)};
+    }
+
 }
 
 Application::Application()
     : window_(1200, 800),
-      renderer_(window_),
-      resources_manager_(
-        ImportContext{
-            .device = renderer_.device(),
-            .allocator = renderer_.allocator(),
-            .uploader = renderer_.uploader(),
-            .material_descriptor_set_layout = renderer_.material_descriptor_set_layout()
-        }
-    ) {
-    renderer_.attach_registry(resources_manager_.registry());
-    load_models("./assets");
-    camera_controller_.enable(window_);
-}
+      device_context_(window_),
+      renderer_(device_context_, window_),
+      forward_pass_(
+          device_context_.device(),
+          device_context_.allocator(),
+          renderer_.render_pass(),
+          renderer_.frame_count()
+      ),
+      input_system_(window_, scene_.camera()) {}
 
 auto Application::run() -> void {
+    const auto material_ids = load_models("./assets");
+    forward_pass_.write_material_descriptors(material_ids, registry_);
     setup_scene();
     loop();
 }
 
-auto Application::load_models(const std::filesystem::path& root) -> void {
+auto Application::load_models(const std::filesystem::path& root)
+    -> std::vector<ResourceId<Material>> {
     std::vector<std::filesystem::path> model_paths;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) {
         if (!entry.is_regular_file()) {
@@ -53,32 +113,53 @@ auto Application::load_models(const std::filesystem::path& root) -> void {
                 return static_cast<char>(std::tolower(character));
             }
         );
-        if (extension == ".obj" ||
-            extension == ".fbx" ||
-            extension == ".gltf" ||
-            extension == ".glb") {
+        if (extension == ".obj" || extension == ".fbx" ||extension == ".gltf" || extension == ".glb") {
             model_paths.push_back(entry.path());
         }
     }
+
     std::ranges::sort(model_paths);
+    std::vector<ResourceId<Material>> material_ids;
+    std::unordered_set<uint32_t> material_id_values;
     for (const auto& path : model_paths) {
-        resources_manager_.import_model(path, make_model_name(root, path));
+        auto name = make_model_name(root, path);
+        if (name.empty()) {
+            throw std::invalid_argument("model name cannot be empty");
+        }
+        if (registry_.contains_model(name)) {
+            throw std::invalid_argument(
+                "model name is already registered: " + name
+            );
+        }
+
+        auto model = load_model(
+            path,
+            device_context_,
+            registry_
+        );
+        for (const auto& mesh : model.meshes()) {
+            const auto material_id = mesh.material();
+            if (material_id_values.insert(material_id.value()).second) {
+                material_ids.push_back(material_id);
+            }
+        }
+        const auto model_id = registry_.add(
+            std::make_unique<Model>(std::move(model))
+        );
+        registry_.set_model_name(model_id, std::move(name));
     }
+    return material_ids;
 }
 
 auto Application::setup_scene() -> void {
     scene_.create_entity(
-        resources_manager_.query_model("sponza"),
+        registry_.query_model_id("sponza"),
         Transform {}
     );
 }
 
 auto Application::update(float delta_time) -> void {
-    camera_controller_.update(
-        scene_.camera(),
-        window_,
-        delta_time
-    );
+    input_system_.update(delta_time);
 }
 
 auto Application::loop() -> void {
@@ -95,7 +176,12 @@ auto Application::loop() -> void {
         previous_time = current_time;
 
         if (window_.consume_framebuffer_resized()) {
-            renderer_.recreate_swapchain(window_);
+            if (renderer_.recreate_swapchain(device_context_, window_)) {
+                forward_pass_.recreate_pipeline(
+                    device_context_.device(),
+                    renderer_.render_pass()
+                );
+            }
             previous_time = glfwGetTime();
             continue;
         }
@@ -103,12 +189,26 @@ auto Application::loop() -> void {
         update(delta_time);
 
         try {
-            renderer_.render(scene_);
+            renderer_.render(
+                device_context_.device(),
+                [this](const RenderFrameContext& frame) {
+                    forward_pass_.record(
+                        frame,
+                        scene_,
+                        registry_
+                    );
+                }
+            );
         }
         catch (const vk::OutOfDateKHRError&) {
-            renderer_.recreate_swapchain(window_);
+            if (renderer_.recreate_swapchain(device_context_, window_)) {
+                forward_pass_.recreate_pipeline(
+                    device_context_.device(),
+                    renderer_.render_pass()
+                );
+            }
             previous_time = glfwGetTime();
         }
     }
-    renderer_.wait_idle();
+    renderer_.wait_idle(device_context_.device());
 }

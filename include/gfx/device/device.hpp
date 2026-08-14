@@ -1,17 +1,16 @@
 #ifndef DEVICE_HPP
 #define DEVICE_HPP
 
-#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
-
 #include <optional>
 
-#include "gfx/device/instance.hpp"
-#include "gfx/device/surface.hpp"
-#include "platform/window.hpp"
+#include <vulkan/vulkan_raii.hpp>
 
 class Device {
 public:
-    Device(const Instance& instance, const Surface& surface);
+    Device(
+        const vk::raii::Instance& instance,
+        const vk::raii::SurfaceKHR& surface
+    );
     ~Device() = default;
 
     Device(const Device&) = delete;
@@ -71,13 +70,13 @@ private:
     vk::raii::Queue present_queue_ = nullptr;
 
     static auto select_physical_device(
-        const Instance& instance,
-        const Surface& surface
+        const vk::raii::Instance& instance,
+        const vk::raii::SurfaceKHR& surface
     ) -> SelectedPhysicalDevice;
 
     static auto find_queue_families(
         const vk::raii::PhysicalDevice& physical_device,
-        const Surface& surface
+        const vk::raii::SurfaceKHR& surface
     ) -> std::optional<QueueFamilies>;
 
     static auto create_logical_device(

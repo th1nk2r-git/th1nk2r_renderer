@@ -14,10 +14,14 @@ add_requires(
     "assimp 6.0.4"
 )
 
-target("application")
+target("th1nk2r_renderer")
     set_kind("binary")
     set_targetdir("bin")
-    add_defines("GLM_FORCE_RADIANS", "GLM_FORCE_DEPTH_ZERO_TO_ONE")
+    add_defines(
+        "VULKAN_HPP_NO_STRUCT_CONSTRUCTORS",
+        "GLM_FORCE_RADIANS",
+        "GLM_FORCE_DEPTH_ZERO_TO_ONE"
+    )
     add_files("src/**.cpp")
     add_includedirs("./include")
     add_packages(

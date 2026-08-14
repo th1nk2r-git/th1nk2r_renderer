@@ -3,7 +3,7 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
-#include "gfx/device/gpu_allocator.hpp"
+#include "gfx/device/memory_allocator.hpp"
 
 enum class BufferMemoryUsage {
     GpuOnly,
@@ -21,7 +21,7 @@ struct BufferDesc {
 class Buffer {
 public:
     Buffer() = default;
-    Buffer(const GpuAllocator& allocator, const BufferDesc& desc);
+    Buffer(const MemoryAllocator& allocator, const BufferDesc& desc);
     ~Buffer() noexcept;
 
     Buffer(const Buffer&) = delete;
@@ -37,6 +37,10 @@ public:
         return size_;
     }
 
+    auto usage() const noexcept -> vk::BufferUsageFlags {
+        return usage_;
+    }
+
     auto write(const void* data, vk::DeviceSize size, vk::DeviceSize offset = 0) -> void;
 
 private:
@@ -45,6 +49,7 @@ private:
     VmaAllocation allocation_ = nullptr;
 
     vk::DeviceSize size_ = 0;
+    vk::BufferUsageFlags usage_{};
     void* mapped_data_ = nullptr;
 };
 
