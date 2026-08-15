@@ -42,8 +42,7 @@ Mesh::Mesh(
     ResourceId<Material> material,
     const MemoryAllocator& allocator,
     BufferUploader& uploader
-)
-    : index_count_(checked_index_count(data)),
+) : index_count_(checked_index_count(data)),
       material_(material),
       vertex_buffer_(
           allocator,
@@ -84,7 +83,6 @@ Mesh::Mesh(
             .destination_access = vk::AccessFlagBits::eIndexRead
         }
     );
-    uploader.submit_and_wait();
 }
 
 auto Mesh::bind(vk::raii::CommandBuffer& command_buffer) const -> void {

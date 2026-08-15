@@ -29,12 +29,12 @@ namespace {
         return relative_directory.generic_string();
     }
 
-    auto load_model(
+    auto import_model(
         const std::filesystem::path& path,
         DeviceContext& device_context,
         ResourceRegistry& registry
     ) -> Model {
-        const auto data = ::load_model(path);
+        const auto data = load_model(path);
         if (data.material_.empty()) {
             throw std::runtime_error(
                 "loaded model does not contain a local material list"
@@ -132,7 +132,7 @@ auto Application::load_models(const std::filesystem::path& root)
             );
         }
 
-        auto model = load_model(
+        auto model = import_model(
             path,
             device_context_,
             registry_
@@ -148,6 +148,8 @@ auto Application::load_models(const std::filesystem::path& root)
         );
         registry_.set_model_name(model_id, std::move(name));
     }
+    device_context_.buffer_uploader().submit_and_wait();
+    device_context_.image_uploader().submit_and_wait();
     return material_ids;
 }
 

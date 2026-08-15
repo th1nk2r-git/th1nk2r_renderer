@@ -160,5 +160,4 @@ Texture::Texture(
         image_,
         upload_desc
     );
-    uploader.submit_and_wait();
 }
