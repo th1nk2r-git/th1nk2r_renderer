@@ -14,6 +14,13 @@ add_requires(
     "assimp 6.0.4"
 )
 
+add_requires("imgui v1.92.9b", {
+    configs = {
+        glfw = true,
+        vulkan = true
+    }
+})
+
 target("th1nk2r_renderer")
     set_kind("binary")
     set_targetdir("bin")
@@ -30,7 +37,8 @@ target("th1nk2r_renderer")
         "glm",
         "vulkan-memory-allocator",
         "stb",
-        "assimp"
+        "assimp",
+        "imgui"
     )
 
     after_build(function (target)

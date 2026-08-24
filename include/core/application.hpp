@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <vector>
 
+#include "core/frame_rate_counter.hpp"
 #include "core/input/input_system.hpp"
 #include "gfx/device/device_context.hpp"
 #include "platform/window.hpp"
@@ -12,6 +13,7 @@
 #include "render/renderer.hpp"
 #include "resource/registry/resource_registry.hpp"
 #include "scene/scene.hpp"
+#include "ui/imgui_layer.hpp"
 
 class Application {
 public:
@@ -35,6 +37,8 @@ private:
     ForwardPass forward_pass_;
     ResourceRegistry registry_;
     InputSystem input_system_;
+    FrameRateCounter frame_rate_counter_;
+    ImGuiLayer imgui_layer_;
 
     // load the models
     auto load_models(const std::filesystem::path& root) -> std::vector<ResourceId<Material>>;

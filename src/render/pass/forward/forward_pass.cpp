@@ -355,7 +355,8 @@ auto ForwardPass::write_environment(
 auto ForwardPass::record(
     ExecutionContext context,
     Input input,
-    Output output
+    Output output,
+    const OverlayRecorder& overlay_recorder
 ) -> void {
     const auto aspect_ratio = static_cast<float>(output.extent.width) / static_cast<float>(output.extent.height);
     camera_writer_.write(
@@ -500,6 +501,10 @@ auto ForwardPass::record(
         *skybox_pipeline_
     );
     command_buffer.draw(36, 1, 0, 0);
+
+    if (overlay_recorder) {
+        overlay_recorder(command_buffer);
+    }
 
     command_buffer.endRenderPass();
 }

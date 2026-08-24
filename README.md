@@ -1,6 +1,6 @@
 # th1nk2r_renderer
 
-基于 **C++20** 与 **Vulkan 1.4** 构建的模块化实时渲染器。项目采用 Vulkan-Hpp RAII 管理 Vulkan 对象，使用 VMA 分配 GPU 内存，并通过 Assimp、stb_image 与 Slang 建立模型导入、纹理处理和着色器编译链路。
+基于 **C++20** 与 **Vulkan 1.4** 构建的模块化实时渲染器。项目采用 Vulkan-Hpp RAII 管理 Vulkan 对象，使用 VMA 分配 GPU 内存，通过 Assimp、stb_image 与 Slang 建立模型导入、纹理处理和着色器编译链路，并使用 Dear ImGui 提供运行时性能覆盖层。
 
 渲染器将平台窗口、设备上下文、帧调度、资源系统、场景表达与渲染 Pass 分层组织，以清晰的所有权边界管理 GPU 资源。当前渲染路径支持 Metallic-Roughness PBR、基于计算着色器的 IBL 预计算、点光源 PCSS 全向软阴影与天空盒渲染，并使用 Sponza 作为默认示例场景。
 
@@ -28,9 +28,19 @@
 - 使用 Vulkan-Hpp RAII 管理实例、设备、Swapchain、Pipeline、Descriptor 与同步对象的生命周期。
 - 使用 Vulkan Memory Allocator（VMA）统一分配 Buffer 和 Image 显存。
 - 双帧并行，使用 Fence 和 Semaphore 管理 CPU/GPU 与呈现同步。
+- 使用 `FrameRateCounter` 统计渲染吞吐率，并通过 Dear ImGui 在左上角显示每秒更新的一秒平均帧率。
 - 优先选择 Mailbox Present Mode，不可用时回退到 FIFO。
 - 处理窗口缩放、最小化、`VK_ERROR_OUT_OF_DATE_KHR` 与 Swapchain/图形管线重建。
 - Debug 构建自动尝试启用 `VK_LAYER_KHRONOS_validation` 和 Debug Messenger。
+
+### 性能覆盖层
+
+- `Application` 持有 `FrameRateCounter` 和 `ImGuiLayer`，在帧循环开始和成功完成 `Renderer::render()` 后分别调用帧率统计接口。
+- `FrameRateCounter` 使用 `std::chrono::steady_clock` 计时。采样时间达到一秒后，以成功完成的帧数除以实际采样时长，并保存本次区间的平均 FPS。
+- `ImGuiLayer` 创建并销毁 Dear ImGui Context，初始化 GLFW 与 Vulkan 后端，并关闭 ImGui 配置文件输出。
+- FPS 窗口固定在主视口坐标 `(10, 10)`，使用无装饰、自动尺寸、无输入、透明背景和零边框配置；文字基础字号为 `40.0`。
+- `ImGuiLayer` 在每帧生成 FPS 窗口的 Draw Data。`ForwardPass` 绘制场景与天空盒后，通过 Overlay 回调将 Draw Data 记录到当前 Command Buffer，再结束主 Render Pass。
+- `Renderer` 暴露实际 Swapchain Image 数量。Swapchain 重建完成后，`Application` 使用新的 Render Pass 和 Image 数量重新初始化 ImGui Vulkan 后端。
 
 ## 设计原则
 
@@ -48,6 +58,7 @@
 | Vulkan 1.4 / Vulkan-Hpp | 图形 API 与类型安全 RAII 封装 |
 | Slang | Vertex、Fragment、Compute Shader 与 SPIR-V 编译 |
 | GLFW | 窗口、输入和 Vulkan Surface |
+| Dear ImGui 1.92.9b | Vulkan 帧率覆盖层 |
 | GLM | 向量、矩阵与四元数运算 |
 | Vulkan Memory Allocator | GPU 内存分配 |
 | Assimp 6.0.4 | 模型、网格和材质导入 |
@@ -56,7 +67,7 @@
 
 ## 架构
 
-项目按平台、设备、资源、场景和渲染职责拆分模块。`DeviceContext` 聚合 Vulkan 设备级基础设施，`Renderer` 管理帧调度与呈现，各渲染 Pass 独立维护其管线、描述符和命令记录逻辑。
+项目按平台、设备、资源、场景、UI 和渲染职责拆分模块。`DeviceContext` 聚合 Vulkan 设备级基础设施，`Renderer` 管理帧调度与呈现，各渲染 Pass 独立维护其管线、描述符和命令记录逻辑，`ImGuiLayer` 负责性能覆盖层的生命周期与命令记录。
 
 ```mermaid
 flowchart LR
@@ -68,17 +79,21 @@ flowchart LR
 
     Window["GLFW Window"] --> Input["InputSystem"]
     Input --> Scene["Scene / Camera / Lights"]
+    Window --> UI["ImGuiLayer / FPS Overlay"]
+    FPS["FrameRateCounter"] --> UI
     Registry --> Shadow["ShadowPass"]
     Scene --> Shadow
     Registry --> Forward["ForwardPass"]
     Scene --> Forward
     Shadow --> Forward
+    UI --> Forward
     Forward --> Renderer["Renderer / FramesInFlight"]
     Renderer --> Swapchain["Swapchain / Present"]
 
     Device["DeviceContext"] --> Upload
     Device --> Shadow
     Device --> Forward
+    Device --> UI
     Device --> Renderer
 ```
 
@@ -86,7 +101,7 @@ flowchart LR
 
 | 模块 | 职责 |
 | --- | --- |
-| `core` | 应用生命周期、资源装载、主循环与输入调度 |
+| `core` | 应用生命周期、资源装载、主循环、输入调度与帧率统计 |
 | `platform` | GLFW 窗口及事件回调封装 |
 | `gfx/device` | Vulkan 实例与设备、VMA、Buffer/Image 上传器 |
 | `gfx/frame` | Swapchain、深度附件、Framebuffer 与帧同步 |
@@ -94,13 +109,14 @@ flowchart LR
 | `io` | SPIR-V、模型与图像读取 |
 | `resource` | CPU/GPU 资源、材质、网格、模型与资源注册表 |
 | `scene` | 相机、实体、Transform 与点光源 |
+| `ui` | Dear ImGui 生命周期、Vulkan 后端与 FPS 覆盖层 |
 | `render/pass/shadow` | 点光源 Cubemap Array 深度生成与阴影描述符输出 |
 | `render/pass/forward` | PBR 前向着色、IBL 预计算、材质/相机/灯光描述符与天空盒 |
 
 ### 启动阶段
 
 1. 创建 GLFW 窗口、Vulkan 实例、Surface、物理/逻辑设备和 Swapchain。
-2. 创建帧同步资源、阴影 Pass 与前向 Pass。
+2. 创建帧同步资源、阴影 Pass、前向 Pass 与 ImGui 性能覆盖层。
 3. 递归扫描 `assets/`，导入模型、材质与纹理。
 4. 通过暂存资源将网格和图像批量上传至 GPU，并生成纹理 Mipmap。
 5. 加载 HDR 环境图，使用 Compute Shader 生成 IBL 所需的 Cubemap 与查找表。
@@ -109,13 +125,16 @@ flowchart LR
 ### 单帧流程
 
 ```text
-等待当前帧 Fence
+开始帧率计时并处理窗口事件
+  -> 更新应用状态，生成 ImGui FPS Draw Data
+  -> 等待当前帧 Fence
   -> 获取 Swapchain Image
   -> 更新 Camera / Light Buffer
   -> ShadowPass：为投影点光源记录六面深度
-  -> ForwardPass：PBR 实体绘制 + 天空盒
+  -> ForwardPass：PBR 实体绘制 + 天空盒 + ImGui FPS 覆盖层
   -> 提交 Graphics Queue
   -> Present
+  -> 完成帧率计数，采样满一秒时更新平均 FPS
 ```
 
 ## 项目结构
@@ -130,7 +149,8 @@ th1nk2r_renderer/
 │  ├─ platform/                    # 窗口抽象
 │  ├─ render/pass/                 # Forward Pass 与 Shadow Pass
 │  ├─ resource/                    # CPU/GPU 资源和 Registry
-│  └─ scene/                       # Camera、Entity、Transform、Light
+│  ├─ scene/                       # Camera、Entity、Transform、Light
+│  └─ ui/                          # ImGuiLayer 与性能覆盖层
 ├─ shaders/
 │  ├─ vertex/                      # 顶点着色器
 │  ├─ fragment/                    # 片元着色器
@@ -160,7 +180,7 @@ xmake --version
 slangc -version
 ```
 
-GLFW、GLM、VMA、stb、Assimp 与 Vulkan SDK 已在 `xmake.lua` 中声明，Xmake 会在首次配置时解析依赖，因此首次构建可能需要网络连接。
+GLFW、Dear ImGui、GLM、VMA、stb、Assimp 与 Vulkan SDK 已在 `xmake.lua` 中声明，Xmake 会在首次配置时解析依赖，因此首次构建可能需要网络连接。
 
 ## 构建与运行
 
@@ -246,6 +266,8 @@ Pop-Location
 | 参数 | 当前值 |
 | --- | --- |
 | Frames in Flight | 2 |
+| FPS 采样周期 | 1 秒，非重叠窗口 |
+| FPS 显示 | 坐标 `(10, 10)`；基础字号 `40.0`；透明背景；零边框 |
 | 默认窗口 | 1200 × 800 |
 | 阴影贴图 | 每帧 512 × 512 Cubemap Array |
 | 最大投影点光源数 | 8 |

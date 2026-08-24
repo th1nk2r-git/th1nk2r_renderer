@@ -65,6 +65,10 @@ public:
         return frames_in_flight_.frame_count();
     }
 
+    auto image_count() const noexcept -> uint32_t {
+        return swapchain_.image_count();
+    }
+
 private:
     Swapchain swapchain_;
     FramesInFlight frames_in_flight_;

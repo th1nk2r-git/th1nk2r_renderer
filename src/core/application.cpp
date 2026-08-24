@@ -96,7 +96,13 @@ Application::Application()
           shadow_pass_.descriptor_set_layout(),
           renderer_.frame_count()
       ),
-      input_system_(window_, scene_.camera()) {}
+      input_system_(window_, scene_.camera()),
+      imgui_layer_(
+          window_,
+          device_context_,
+          renderer_.render_pass(),
+          renderer_.image_count()
+      ) {}
 
 auto Application::run() -> void {
     const auto material_ids = load_models("./assets");
@@ -194,6 +200,7 @@ auto Application::loop() -> void {
     auto previous_time = glfwGetTime();
 
     while (!window_.should_close()) {
+        frame_rate_counter_.begin_frame();
         window_.poll_events();
 
         const auto current_time = glfwGetTime();
@@ -209,12 +216,18 @@ auto Application::loop() -> void {
                     device_context_.device(),
                     renderer_.render_pass()
                 );
+                imgui_layer_.recreate(
+                    renderer_.render_pass(),
+                    renderer_.image_count()
+                );
             }
             previous_time = glfwGetTime();
+            frame_rate_counter_.reset();
             continue;
         }
 
         update(delta_time);
+        imgui_layer_.prepare_frame(frame_rate_counter_.average_fps());
 
         try {
             renderer_.render(
@@ -244,10 +257,15 @@ auto Application::loop() -> void {
                             .render_pass = frame.render_pass,
                             .framebuffer = frame.framebuffer,
                             .extent = frame.extent
+                        },
+                        [this](vk::raii::CommandBuffer& command_buffer) {
+                            imgui_layer_.record(command_buffer);
                         }
                     );
                 }
             );
+
+            frame_rate_counter_.end_frame();
         }
         catch (const vk::OutOfDateKHRError&) {
             if (renderer_.recreate_swapchain(device_context_, window_)) {
@@ -255,8 +273,13 @@ auto Application::loop() -> void {
                     device_context_.device(),
                     renderer_.render_pass()
                 );
+                imgui_layer_.recreate(
+                    renderer_.render_pass(),
+                    renderer_.image_count()
+                );
             }
             previous_time = glfwGetTime();
+            frame_rate_counter_.reset();
         }
     }
     renderer_.wait_idle(device_context_.device());

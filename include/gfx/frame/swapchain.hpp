@@ -30,6 +30,10 @@ public:
         return image_format_;
     }
 
+    auto image_count() const noexcept -> uint32_t {
+        return static_cast<uint32_t>(images_.size());
+    }
+
     auto extent() const noexcept -> vk::Extent2D {
         return extent_;
     }
