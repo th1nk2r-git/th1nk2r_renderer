@@ -171,11 +171,11 @@ auto Application::setup_scene() -> void {
         Transform {}
     );
 
-    scene_.camera().set_position(glm::vec3{0.0F, 2.0F, 7.0F});
+    scene_.camera().set_position(glm::vec3{-2.0F, 2.0F, 7.0F});
 
     scene_.add_point_light(
         PointLight{
-            .position = glm::vec3{0.0F, 4.5F, 0.0F},
+            .position = glm::vec3{0.0F, 6.0F, 0.0F},
             .color = glm::vec3{1.0F, 0.9F, 0.75F},
             .intensity = 100.0F,
             .casts_shadow = true,

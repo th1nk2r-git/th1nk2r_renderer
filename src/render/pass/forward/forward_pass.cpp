@@ -133,6 +133,13 @@ namespace {
             .setDescriptorCount(1)
             .setStageFlags(vk::ShaderStageFlagBits::eFragment);
 
+        vk::DescriptorSetLayoutBinding environment_binding{};
+        environment_binding
+            .setBinding(4)
+            .setDescriptorType(vk::DescriptorType::eSampledImage)
+            .setDescriptorCount(1)
+            .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
         const std::array camera_bindings{camera_uniform_binding};
         const std::array material_bindings{
             sampler_binding,
@@ -148,7 +155,8 @@ namespace {
             ibl_sampler_binding,
             irradiance_binding,
             prefiltered_binding,
-            brdf_lut_binding
+            brdf_lut_binding,
+            environment_binding
         };
         std::vector<vk::raii::DescriptorSetLayout> layouts;
         layouts.reserve(4);
@@ -256,6 +264,32 @@ namespace {
         desc.depth_write_enable = true;
         return GraphicsPipelineFactory::create(device, desc);
     }
+
+    auto create_skybox_pipeline(
+        const Device& device,
+        const vk::raii::RenderPass& render_pass,
+        const vk::raii::PipelineLayout& pipeline_layout
+    ) -> vk::raii::Pipeline {
+        const auto vertex_shader = create_shader_module(
+            device,
+            "./spv/skybox_vertex.spv"
+        );
+        const auto fragment_shader = create_shader_module(
+            device,
+            "./spv/skybox_fragment.spv"
+        );
+
+        GraphicsPipelineDesc desc{};
+        desc.vertex_shader = &vertex_shader;
+        desc.fragment_shader = &fragment_shader;
+        desc.layout = &pipeline_layout;
+        desc.render_pass = &render_pass;
+        desc.cull_mode = vk::CullModeFlagBits::eNone;
+        desc.depth_test_enable = true;
+        desc.depth_write_enable = false;
+        desc.depth_compare_op = vk::CompareOp::eLessOrEqual;
+        return GraphicsPipelineFactory::create(device, desc);
+    }
 }
 
 ForwardPass::ForwardPass(
@@ -273,6 +307,9 @@ ForwardPass::ForwardPass(
         )
     ),
     pipeline_(create_pipeline(device, render_pass, pipeline_layout_)),
+    skybox_pipeline_(
+        create_skybox_pipeline(device, render_pass, pipeline_layout_)
+    ),
     camera_writer_(
         device,
         allocator,
@@ -458,10 +495,22 @@ auto ForwardPass::record(
         }
     }
 
+    command_buffer.bindPipeline(
+        vk::PipelineBindPoint::eGraphics,
+        *skybox_pipeline_
+    );
+    command_buffer.draw(36, 1, 0, 0);
+
     command_buffer.endRenderPass();
 }
 
 auto ForwardPass::recreate_pipeline(const Device& device, const vk::raii::RenderPass& render_pass) -> void {
     auto replacement = create_pipeline(device, render_pass, pipeline_layout_);
+    auto skybox_replacement = create_skybox_pipeline(
+        device,
+        render_pass,
+        pipeline_layout_
+    );
     pipeline_ = std::move(replacement);
+    skybox_pipeline_ = std::move(skybox_replacement);
 }

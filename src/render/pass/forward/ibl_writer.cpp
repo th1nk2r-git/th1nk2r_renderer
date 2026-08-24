@@ -510,7 +510,7 @@ namespace {
     ) -> vk::raii::DescriptorPool {
         const std::array pool_sizes{
             vk::DescriptorPoolSize{vk::DescriptorType::eSampler, 1},
-            vk::DescriptorPoolSize{vk::DescriptorType::eSampledImage, 3}
+            vk::DescriptorPoolSize{vk::DescriptorType::eSampledImage, 4}
         };
         vk::DescriptorPoolCreateInfo create_info{};
         create_info
@@ -526,7 +526,8 @@ namespace {
         const vk::raii::Sampler& sampler,
         const vk::raii::ImageView& irradiance_view,
         const vk::raii::ImageView& prefiltered_view,
-        const vk::raii::ImageView& brdf_lut_view
+        const vk::raii::ImageView& brdf_lut_view,
+        const vk::raii::ImageView& environment_view
     ) -> void {
         const vk::DescriptorImageInfo sampler_info{.sampler = *sampler};
         const std::array image_infos{
@@ -541,9 +542,13 @@ namespace {
             vk::DescriptorImageInfo{
                 .imageView = *brdf_lut_view,
                 .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+            },
+            vk::DescriptorImageInfo{
+                .imageView = *environment_view,
+                .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
             }
         };
-        std::array<vk::WriteDescriptorSet, 4> writes{};
+        std::array<vk::WriteDescriptorSet, 5> writes{};
         writes[0]
             .setDstSet(*descriptor_set)
             .setDstBinding(0)
@@ -952,7 +957,8 @@ auto IblWriter::write(
         vk::AccessFlagBits::eTransferRead,
         vk::AccessFlagBits::eShaderRead,
         vk::PipelineStageFlagBits::eTransfer,
-        vk::PipelineStageFlagBits::eComputeShader
+        vk::PipelineStageFlagBits::eComputeShader |
+            vk::PipelineStageFlagBits::eFragmentShader
     );
 
     transition_image(
@@ -1110,7 +1116,8 @@ auto IblWriter::write(
         sampler,
         irradiance_view_,
         prefiltered_view_,
-        brdf_lut_view_
+        brdf_lut_view_,
+        environment_view_
     );
 
     sampler_ = std::move(sampler);

@@ -69,6 +69,7 @@ private:
     std::vector<vk::raii::DescriptorSetLayout> descriptor_set_layouts_;
     vk::raii::PipelineLayout pipeline_layout_ = nullptr;
     vk::raii::Pipeline pipeline_ = nullptr;
+    vk::raii::Pipeline skybox_pipeline_ = nullptr;
     CameraWriter camera_writer_;
     MaterialWriter material_writer_;
     LightWriter light_writer_;

@@ -7,6 +7,21 @@
 #include <utility>
 #include <vector>
 
+namespace {
+    auto supports_shader_draw_parameters(
+        const vk::raii::PhysicalDevice& physical_device
+    ) -> bool {
+        VkPhysicalDeviceVulkan11Features vulkan11_features{};
+        vulkan11_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        VkPhysicalDeviceFeatures2 features{};
+        features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features.pNext = &vulkan11_features;
+        vkGetPhysicalDeviceFeatures2(*physical_device, &features);
+        return vulkan11_features.shaderDrawParameters == VK_TRUE;
+    }
+}
+
 Device::Device(
     const vk::raii::Instance& instance,
     const vk::raii::SurfaceKHR& surface
@@ -46,6 +61,9 @@ auto Device::select_physical_device(
             continue;
         }
         if (!physical_device.getFeatures().imageCubeArray) {
+            continue;
+        }
+        if (!supports_shader_draw_parameters(physical_device)) {
             continue;
         }
         auto required_extensions = std::set<std::string>{
@@ -122,8 +140,11 @@ auto Device::create_logical_device(
 
     vk::PhysicalDeviceFeatures required_features{};
     required_features.setImageCubeArray(true);
+    vk::PhysicalDeviceVulkan11Features required_vulkan11_features{};
+    required_vulkan11_features.setShaderDrawParameters(true);
 
     const vk::DeviceCreateInfo create_info{
+        .pNext = &required_vulkan11_features,
         .queueCreateInfoCount =
             static_cast<uint32_t>(queue_create_infos.size()),
         .pQueueCreateInfos = queue_create_infos.data(),
