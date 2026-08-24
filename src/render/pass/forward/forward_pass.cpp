@@ -1,6 +1,7 @@
 #include "render/pass/forward/forward_pass.hpp"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -16,6 +17,7 @@
 #include "scene/scene.hpp"
 #include "io/spirv_loader.hpp"
 #include "resource/cpu/mesh.hpp"
+#include "resource/gpu/mesh.hpp"
 #include "resource/registry/resource_registry.hpp"
 
 namespace {
@@ -31,6 +33,90 @@ namespace {
     };
 
     static_assert(sizeof(DrawConstants) == 128);
+
+    struct FrustumPlane {
+        glm::vec3 normal{0.0F};
+        float offset = 0.0F;
+    };
+
+    using Frustum = std::array<FrustumPlane, 6>;
+
+    auto matrix_row(const glm::mat4& matrix, size_t row) noexcept
+        -> glm::vec4 {
+        return {
+            matrix[0][row],
+            matrix[1][row],
+            matrix[2][row],
+            matrix[3][row]
+        };
+    }
+
+    auto make_plane(const glm::vec4& coefficients) noexcept
+        -> FrustumPlane {
+        return {
+            .normal = glm::vec3{coefficients},
+            .offset = coefficients.w
+        };
+    }
+
+    auto make_frustum(const glm::mat4& view_projection) noexcept
+        -> Frustum {
+        const auto row_0 = matrix_row(view_projection, 0);
+        const auto row_1 = matrix_row(view_projection, 1);
+        const auto row_2 = matrix_row(view_projection, 2);
+        const auto row_3 = matrix_row(view_projection, 3);
+
+        // Vulkan clip space uses -w <= x,y <= w and 0 <= z <= w.
+        return {
+            make_plane(row_3 + row_0),
+            make_plane(row_3 - row_0),
+            make_plane(row_3 + row_1),
+            make_plane(row_3 - row_1),
+            make_plane(row_2),
+            make_plane(row_3 - row_2)
+        };
+    }
+
+    auto intersects(
+        const Frustum& frustum,
+        const Mesh::Bounds& local_bounds,
+        const glm::mat4& model_matrix
+    ) noexcept -> bool {
+        const auto local_center =
+            (local_bounds.minimum + local_bounds.maximum) * 0.5F;
+        const auto local_extents =
+            (local_bounds.maximum - local_bounds.minimum) * 0.5F;
+        const auto world_center = glm::vec3{
+            model_matrix * glm::vec4{local_center, 1.0F}
+        };
+
+        const glm::vec3 world_extents{
+            std::abs(model_matrix[0][0]) * local_extents.x +
+                std::abs(model_matrix[1][0]) * local_extents.y +
+                std::abs(model_matrix[2][0]) * local_extents.z,
+            std::abs(model_matrix[0][1]) * local_extents.x +
+                std::abs(model_matrix[1][1]) * local_extents.y +
+                std::abs(model_matrix[2][1]) * local_extents.z,
+            std::abs(model_matrix[0][2]) * local_extents.x +
+                std::abs(model_matrix[1][2]) * local_extents.y +
+                std::abs(model_matrix[2][2]) * local_extents.z
+        };
+
+        for (const auto& plane : frustum) {
+            const auto projected_radius =
+                std::abs(plane.normal.x) * world_extents.x +
+                std::abs(plane.normal.y) * world_extents.y +
+                std::abs(plane.normal.z) * world_extents.z;
+            const auto signed_distance =
+                glm::dot(plane.normal, world_center) + plane.offset;
+
+            if (signed_distance + projected_radius < 0.0F) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     auto create_descriptor_set_layout(const Device& device, std::span<const vk::DescriptorSetLayoutBinding> bindings) -> vk::raii::DescriptorSetLayout {
         vk::DescriptorSetLayoutCreateInfo create_info{};
@@ -359,11 +445,14 @@ auto ForwardPass::record(
     const OverlayRecorder& overlay_recorder
 ) -> void {
     const auto aspect_ratio = static_cast<float>(output.extent.width) / static_cast<float>(output.extent.height);
+    const auto view_matrix = input.scene.camera().view_matrix();
+    const auto projection_matrix = input.scene.camera().projection_matrix(aspect_ratio);
+    const auto frustum = make_frustum(projection_matrix * view_matrix);
     camera_writer_.write(
         context.frame_index,
         ViewProjection{
-            .view = input.scene.camera().view_matrix(),
-            .projection = input.scene.camera().projection_matrix(aspect_ratio),
+            .view = view_matrix,
+            .projection = projection_matrix,
             .camera_position = glm::vec4{
                 input.scene.camera().position(),
                 1.0F
@@ -459,27 +548,44 @@ auto ForwardPass::record(
 
     for (const auto& entity : input.scene.entities()) {
         const auto model_matrix = entity.model_matrix();
-        const auto normal_matrix = glm::transpose(
-            glm::inverse(glm::mat3{model_matrix})
-        );
-        command_buffer.pushConstants<DrawConstants>(
-            *pipeline_layout_,
-            vk::ShaderStageFlagBits::eVertex |
-                vk::ShaderStageFlagBits::eFragment,
-            0,
-            DrawConstants{
-                .transform = model_matrix,
-                .normal_column_0 = glm::vec4{normal_matrix[0], 0.0F},
-                .normal_column_1 = glm::vec4{normal_matrix[1], 0.0F},
-                .normal_column_2 = glm::vec4{normal_matrix[2], 0.0F},
-                .point_light_count = light_writer_.light_count(
-                    context.frame_index
-                )
-            }
-        );
-
         const auto& model = input.registry.query(entity.model_id());
+        bool draw_constants_written = false;
         for (const auto& mesh : model.meshes()) {
+            if (!intersects(frustum, mesh.bounds(), model_matrix)) {
+                continue;
+            }
+
+            if (!draw_constants_written) {
+                const auto normal_matrix = glm::transpose(
+                    glm::inverse(glm::mat3{model_matrix})
+                );
+                command_buffer.pushConstants<DrawConstants>(
+                    *pipeline_layout_,
+                    vk::ShaderStageFlagBits::eVertex |
+                        vk::ShaderStageFlagBits::eFragment,
+                    0,
+                    DrawConstants{
+                        .transform = model_matrix,
+                        .normal_column_0 = glm::vec4{
+                            normal_matrix[0],
+                            0.0F
+                        },
+                        .normal_column_1 = glm::vec4{
+                            normal_matrix[1],
+                            0.0F
+                        },
+                        .normal_column_2 = glm::vec4{
+                            normal_matrix[2],
+                            0.0F
+                        },
+                        .point_light_count = light_writer_.light_count(
+                            context.frame_index
+                        )
+                    }
+                );
+                draw_constants_written = true;
+            }
+
             const std::array material_descriptor_sets{
                 *material_writer_.descriptor_set(mesh.material())
             };

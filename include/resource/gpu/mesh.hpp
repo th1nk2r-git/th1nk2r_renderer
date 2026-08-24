@@ -7,11 +7,17 @@
 #include "resource/cpu/mesh.hpp"
 #include "resource/gpu/resource_id.hpp"
 #include <cstdint>
+#include <glm/vec3.hpp>
 
 class Material;
 
 class Mesh {
 public:
+    struct Bounds {
+        glm::vec3 minimum{0.0F};
+        glm::vec3 maximum{0.0F};
+    };
+
     Mesh(
         const MeshData& data,
         ResourceId<Material> material,
@@ -31,6 +37,9 @@ public:
     auto material() const noexcept -> ResourceId<Material> {
         return material_;
     }
+    auto bounds() const noexcept -> const Bounds& {
+        return bounds_;
+    }
 
     auto set_material(ResourceId<Material> new_material) noexcept -> void {
         material_ = new_material;
@@ -39,6 +48,7 @@ public:
 private:
     uint32_t index_count_ = 0;
     ResourceId<Material> material_;
+    Bounds bounds_;
     Buffer vertex_buffer_;
     Buffer index_buffer_;
 };

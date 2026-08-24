@@ -1,5 +1,6 @@
 #include "resource/gpu/mesh.hpp"
 
+#include <algorithm>
 #include <array>
 #include <limits>
 #include <stdexcept>
@@ -35,6 +36,43 @@ namespace {
 
         return static_cast<uint32_t>(data.indices_.size());
     }
+
+    auto calculate_bounds(const MeshData& data) -> Mesh::Bounds {
+        if (data.vertices_.empty()) {
+            throw std::invalid_argument(
+                "mesh requires at least one vertex"
+            );
+        }
+
+        const auto& first_position = data.vertices_.front().position;
+        Mesh::Bounds result{
+            .minimum = {
+                first_position[0],
+                first_position[1],
+                first_position[2]
+            },
+            .maximum = {
+                first_position[0],
+                first_position[1],
+                first_position[2]
+            }
+        };
+
+        for (const auto& vertex : data.vertices_) {
+            for (size_t axis = 0; axis < 3; ++axis) {
+                result.minimum[axis] = std::min(
+                    result.minimum[axis],
+                    vertex.position[axis]
+                );
+                result.maximum[axis] = std::max(
+                    result.maximum[axis],
+                    vertex.position[axis]
+                );
+            }
+        }
+
+        return result;
+    }
 }
 
 Mesh::Mesh(
@@ -44,6 +82,7 @@ Mesh::Mesh(
     BufferUploader& uploader
 ) : index_count_(checked_index_count(data)),
       material_(material),
+      bounds_(calculate_bounds(data)),
       vertex_buffer_(
           allocator,
           BufferDesc{

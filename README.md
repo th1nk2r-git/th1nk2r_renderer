@@ -2,7 +2,7 @@
 
 基于 **C++20** 与 **Vulkan 1.4** 构建的模块化实时渲染器。项目采用 Vulkan-Hpp RAII 管理 Vulkan 对象，使用 VMA 分配 GPU 内存，通过 Assimp、stb_image 与 Slang 建立模型导入、纹理处理和着色器编译链路，并使用 Dear ImGui 提供运行时性能覆盖层。
 
-渲染器将平台窗口、设备上下文、帧调度、资源系统、场景表达与渲染 Pass 分层组织，以清晰的所有权边界管理 GPU 资源。当前渲染路径支持 Metallic-Roughness PBR、基于计算着色器的 IBL 预计算、点光源 PCSS 全向软阴影与天空盒渲染，并使用 Sponza 作为默认示例场景。
+渲染器将平台窗口、设备上下文、帧调度、资源系统、场景表达与渲染 Pass 分层组织，以清晰的所有权边界管理 GPU 资源。当前渲染路径支持 Metallic-Roughness PBR、基于计算着色器的 IBL 预计算、点光源 PCSS 全向软阴影、Mesh 级视锥剔除与天空盒渲染，并使用 Sponza 作为默认示例场景。
 
 ## 核心能力
 
@@ -14,12 +14,14 @@
 - **全向软阴影**：点光源使用 Cubemap Array 保存六面深度，片元阶段通过 PCSS 完成遮挡物搜索与可变半影过滤。
 - **天空盒与 HDR 色调映射**：直接显示环境 Cubemap，并对最终 HDR 光照结果执行 Reinhard Tone Mapping。
 - **多点光源**：场景点光源经 Storage Buffer 上传；每盏灯可独立配置强度、颜色、阴影范围和光源半径。
+- **Mesh 级视锥剔除**：前向 Pass 从相机 View-Projection 矩阵提取 Vulkan ZO 裁剪空间的六个视锥平面，以世界空间 AABB 逐 Mesh 判定可见性，并仅为可见 Mesh 记录材质绑定、网格绑定和索引绘制命令。
 
 ### 资源与场景
 
 - 递归发现并导入 OBJ、FBX、glTF 与 GLB 模型。
 - 支持外部或内嵌 JPEG/PNG 纹理，以及 HDR 环境图。
 - 使用暂存 Buffer 批量上传顶点、索引和图像数据，并为 2D 纹理自动生成完整 Mipmap 链。
+- `Mesh` 构造阶段遍历顶点位置生成模型空间 AABB，并将边界作为网格资源的只读元数据保存。
 - CPU 导入数据、GPU 资源对象与 `ResourceRegistry` 分层管理，通过类型安全 `ResourceId` 引用资源。
 - 提供轻量级 `Scene`、`Entity`、`Transform`、`Camera` 与自由飞行相机控制器。
 
@@ -116,7 +118,7 @@ flowchart LR
 | `scene` | 相机、实体、Transform 与点光源 |
 | `ui` | Dear ImGui 生命周期、Vulkan 后端与 FPS 覆盖层 |
 | `render/pass/shadow` | 点光源 Cubemap Array 深度生成与阴影描述符输出 |
-| `render/pass/forward` | PBR 前向着色、IBL 预计算、材质/相机/灯光描述符与天空盒 |
+| `render/pass/forward` | Mesh 级视锥剔除、PBR 前向着色、IBL 预计算、材质/相机/灯光描述符与天空盒 |
 
 ### 启动阶段
 
@@ -136,7 +138,7 @@ flowchart LR
   -> 获取 Swapchain Image
   -> 更新 Camera / Light Buffer
   -> ShadowPass：为投影点光源记录六面深度
-  -> ForwardPass：PBR 实体绘制 + 天空盒 + ImGui FPS 覆盖层
+  -> ForwardPass：构建相机视锥，执行 Mesh AABB 可见性判定，记录可见 Mesh 的 PBR 绘制、天空盒与 ImGui FPS 覆盖层
   -> 提交 Graphics Queue
   -> Present
   -> 完成帧率计数，采样满一秒时更新平均 FPS
@@ -276,6 +278,7 @@ Pop-Location
 | FPS 采样周期 | 1 秒，非重叠窗口 |
 | FPS 显示 | 坐标 `(10, 10)`；基础字号 `40.0`；透明背景；零边框 |
 | 默认窗口 | 1200 × 800 |
+| 视锥剔除 | Forward Pass；Mesh 粒度；世界空间 AABB；Vulkan ZO 六平面测试 |
 | 阴影贴图 | 每帧 512 × 512 Cubemap Array |
 | 最大投影点光源数 | 8 |
 | PCSS 采样 | 24 次遮挡物搜索 + 24 次过滤 |
