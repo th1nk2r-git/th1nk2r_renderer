@@ -2,11 +2,16 @@
 #define INPUT_SYSTEM_HPP
 
 #include "core/input/controller/camera_controller.hpp"
+#include "core/input/controller/general_controller.hpp"
 #include "platform/window.hpp"
 
 class InputSystem {
 public:
-    InputSystem(Window& window, Camera& camera);
+    InputSystem(
+        Window& window,
+        Camera& camera,
+        GeneralController::Callbacks general_callbacks
+    );
     ~InputSystem() noexcept;
 
     InputSystem(const InputSystem&) = delete;
@@ -22,6 +27,7 @@ public:
 
 private:
     Window& window_;
+    GeneralController general_controller_;
     CameraController camera_controller_;
 
     bool cursor_captured_ = false;

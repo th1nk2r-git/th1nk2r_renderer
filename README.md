@@ -35,7 +35,9 @@
 
 ### 性能覆盖层
 
-- `Application` 持有 `FrameRateCounter` 和 `ImGuiLayer`，在帧循环开始和成功完成 `Renderer::render()` 后分别调用帧率统计接口。
+- `Application` 持有 `fps_enabled_`、`FrameRateCounter` 和 `ImGuiLayer`，`fps_enabled_` 默认值为 `true`。
+- `InputSystem` 将应用级按键事件转发给 `GeneralController`。按下 `F` 时，控制器调用 FPS 切换回调；回调切换 `fps_enabled_` 并重置当前采样。
+- 开关启用时，`Application` 在帧循环开始和成功完成 `Renderer::render()` 后分别调用帧率统计接口。
 - `FrameRateCounter` 使用 `std::chrono::steady_clock` 计时。采样时间达到一秒后，以成功完成的帧数除以实际采样时长，并保存本次区间的平均 FPS。
 - `ImGuiLayer` 创建并销毁 Dear ImGui Context，初始化 GLFW 与 Vulkan 后端，并关闭 ImGui 配置文件输出。
 - FPS 窗口固定在主视口坐标 `(10, 10)`，使用无装饰、自动尺寸、无输入、透明背景和零边框配置；文字基础字号为 `40.0`。
@@ -78,7 +80,10 @@ flowchart LR
     GPU --> Registry["ResourceRegistry"]
 
     Window["GLFW Window"] --> Input["InputSystem"]
-    Input --> Scene["Scene / Camera / Lights"]
+    Input --> Camera["CameraController"]
+    Camera --> Scene["Scene / Camera / Lights"]
+    Input --> General["GeneralController"]
+    General --> FPS
     Window --> UI["ImGuiLayer / FPS Overlay"]
     FPS["FrameRateCounter"] --> UI
     Registry --> Shadow["ShadowPass"]
@@ -239,6 +244,7 @@ Pop-Location
 | `Left Shift` 或 `Right Shift` | 加速移动 |
 | 按住 `Left Alt` 或 `Right Alt` | 临时释放鼠标 |
 | 释放 `Alt` | 重新捕获鼠标 |
+| `F` | 切换 FPS 统计与显示 |
 
 ## 资源约定与定制
 
@@ -266,6 +272,7 @@ Pop-Location
 | 参数 | 当前值 |
 | --- | --- |
 | Frames in Flight | 2 |
+| FPS 默认状态 | 启用 |
 | FPS 采样周期 | 1 秒，非重叠窗口 |
 | FPS 显示 | 坐标 `(10, 10)`；基础字号 `40.0`；透明背景；零边框 |
 | 默认窗口 | 1200 × 800 |

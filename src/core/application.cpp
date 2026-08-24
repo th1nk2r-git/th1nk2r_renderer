@@ -96,7 +96,16 @@ Application::Application()
           shadow_pass_.descriptor_set_layout(),
           renderer_.frame_count()
       ),
-      input_system_(window_, scene_.camera()),
+      input_system_(
+          window_,
+          scene_.camera(),
+          GeneralController::Callbacks{
+              .toggle_fps = [this]() {
+                  fps_enabled_ = !fps_enabled_;
+                  frame_rate_counter_.reset();
+              }
+          }
+      ),
       imgui_layer_(
           window_,
           device_context_,
@@ -200,7 +209,9 @@ auto Application::loop() -> void {
     auto previous_time = glfwGetTime();
 
     while (!window_.should_close()) {
-        frame_rate_counter_.begin_frame();
+        if (fps_enabled_) {
+            frame_rate_counter_.begin_frame();
+        }
         window_.poll_events();
 
         const auto current_time = glfwGetTime();
@@ -227,7 +238,10 @@ auto Application::loop() -> void {
         }
 
         update(delta_time);
-        imgui_layer_.prepare_frame(frame_rate_counter_.average_fps());
+        imgui_layer_.prepare_frame(
+            fps_enabled_,
+            frame_rate_counter_.average_fps()
+        );
 
         try {
             renderer_.render(
@@ -265,7 +279,9 @@ auto Application::loop() -> void {
                 }
             );
 
-            frame_rate_counter_.end_frame();
+            if (fps_enabled_) {
+                frame_rate_counter_.end_frame();
+            }
         }
         catch (const vk::OutOfDateKHRError&) {
             if (renderer_.recreate_swapchain(device_context_, window_)) {

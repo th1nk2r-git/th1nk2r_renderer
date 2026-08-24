@@ -36,8 +36,9 @@ private:
     ShadowPass shadow_pass_;
     ForwardPass forward_pass_;
     ResourceRegistry registry_;
-    InputSystem input_system_;
+    bool fps_enabled_ = true;
     FrameRateCounter frame_rate_counter_;
+    InputSystem input_system_;
     ImGuiLayer imgui_layer_;
 
     // load the models

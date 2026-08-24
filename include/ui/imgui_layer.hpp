@@ -24,7 +24,10 @@ public:
     auto operator=(ImGuiLayer&&) -> ImGuiLayer& = delete;
 
     // build the non-interactive FPS overlay for the current frame
-    auto prepare_frame(double average_fps) const -> void;
+    auto prepare_frame(
+        bool fps_enabled,
+        double average_fps
+    ) const -> void;
 
     // record ImGui draw data inside the active main render pass
     auto record(vk::raii::CommandBuffer& command_buffer) const -> void;

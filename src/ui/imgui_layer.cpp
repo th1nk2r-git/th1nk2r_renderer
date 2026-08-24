@@ -47,30 +47,41 @@ ImGuiLayer::~ImGuiLayer() noexcept {
     shutdown();
 }
 
-auto ImGuiLayer::prepare_frame(double average_fps) const -> void {
+auto ImGuiLayer::prepare_frame(
+    bool fps_enabled,
+    double average_fps
+) const -> void {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::SetNextWindowPos(ImVec2{10.0F, 10.0F}, ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.0F);
+    if (fps_enabled) {
+        ImGui::SetNextWindowPos(
+            ImVec2{10.0F, 10.0F},
+            ImGuiCond_Always
+        );
+        ImGui::SetNextWindowBgAlpha(0.0F);
 
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0F);
+        ImGui::PushStyleVar(
+            ImGuiStyleVar_WindowBorderSize,
+            0.0F
+        );
 
-    constexpr auto flags =
-        ImGuiWindowFlags_NoDecoration |
-        ImGuiWindowFlags_AlwaysAutoResize |
-        ImGuiWindowFlags_NoSavedSettings |
-        ImGuiWindowFlags_NoFocusOnAppearing |
-        ImGuiWindowFlags_NoNav |
-        ImGuiWindowFlags_NoInputs;
+        constexpr auto flags =
+            ImGuiWindowFlags_NoDecoration |
+            ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoNav |
+            ImGuiWindowFlags_NoInputs;
 
-    ImGui::Begin("##fps_overlay", nullptr, flags);
-    ImGui::PushFont(nullptr, 40.0F);
-    ImGui::Text("FPS: %.1f", average_fps);
-    ImGui::PopFont();
-    ImGui::End();
-    ImGui::PopStyleVar();
+        ImGui::Begin("##fps_overlay", nullptr, flags);
+        ImGui::PushFont(nullptr, 40.0F);
+        ImGui::Text("FPS: %.1f", average_fps);
+        ImGui::PopFont();
+        ImGui::End();
+        ImGui::PopStyleVar();
+    }
     ImGui::Render();
 }
 

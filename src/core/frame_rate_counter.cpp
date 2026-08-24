@@ -30,6 +30,7 @@ auto FrameRateCounter::end_frame() noexcept -> bool {
 auto FrameRateCounter::reset() noexcept -> void {
     sample_start_ = {};
     frame_count_ = 0;
+    average_fps_ = 0.0;
     sampling_ = false;
     frame_in_progress_ = false;
 }
