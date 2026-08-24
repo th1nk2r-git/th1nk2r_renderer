@@ -12,4 +12,6 @@ auto load_image_rgba8(const std::filesystem::path& path) -> ImageData;
 
 auto load_image_rgba8(std::span<const std::byte> encoded_data) -> ImageData;
 
+auto load_image_rgba32f(const std::filesystem::path& path) -> HdrImageData;
+
 #endif

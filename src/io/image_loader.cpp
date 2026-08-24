@@ -1,6 +1,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG
 #define STBI_ONLY_PNG
+#define STBI_ONLY_HDR
 #define STBI_FAILURE_USERMSG
 #define STBI_MAX_DIMENSIONS 16384
 
@@ -152,4 +153,49 @@ auto load_image_rgba8(const std::filesystem::path& path) -> ImageData {
     return load_image_rgba8(
         std::span<const std::byte>{encoded_data}
     );
+}
+
+auto load_image_rgba32f(const std::filesystem::path& path) -> HdrImageData {
+    if (path.empty()) {
+        throw std::invalid_argument("HDR image path cannot be empty");
+    }
+
+    const auto path_string = path.string();
+    int width = 0;
+    int height = 0;
+    int source_channels = 0;
+    auto* raw_pixels = stbi_loadf(
+        path_string.c_str(),
+        &width,
+        &height,
+        &source_channels,
+        STBI_rgb_alpha
+    );
+    if (raw_pixels == nullptr) {
+        const char* failure_reason = stbi_failure_reason();
+        throw std::runtime_error(
+            "failed to decode HDR image '" + path_string + "': " +
+            (failure_reason != nullptr ?
+                failure_reason : "unknown stb_image error")
+        );
+    }
+
+    const std::unique_ptr<float, decltype(&stbi_image_free)> pixels{
+        raw_pixels,
+        &stbi_image_free
+    };
+    const auto element_count = image_byte_size(width, height);
+
+    HdrImageData image_data{
+        .width = static_cast<uint32_t>(width),
+        .height = static_cast<uint32_t>(height),
+        .channels = static_cast<uint32_t>(rgba_channel_count),
+        .pixels = std::vector<float>(element_count)
+    };
+    std::memcpy(
+        image_data.pixels.data(),
+        pixels.get(),
+        element_count * sizeof(float)
+    );
+    return image_data;
 }

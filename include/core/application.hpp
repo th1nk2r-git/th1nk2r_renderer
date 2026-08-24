@@ -8,6 +8,7 @@
 #include "gfx/device/device_context.hpp"
 #include "platform/window.hpp"
 #include "render/pass/forward/forward_pass.hpp"
+#include "render/pass/shadow/shadow_pass.hpp"
 #include "render/renderer.hpp"
 #include "resource/registry/resource_registry.hpp"
 #include "scene/scene.hpp"
@@ -30,6 +31,7 @@ private:
     Window window_;
     DeviceContext device_context_;
     Renderer renderer_;
+    ShadowPass shadow_pass_;
     ForwardPass forward_pass_;
     ResourceRegistry registry_;
     InputSystem input_system_;

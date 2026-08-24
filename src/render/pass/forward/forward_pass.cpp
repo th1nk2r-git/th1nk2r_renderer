@@ -2,20 +2,36 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <span>
 #include <utility>
 
+#include <glm/mat3x3.hpp>
 #include <glm/mat4x4.hpp>
+#include <glm/matrix.hpp>
+#include <glm/vec4.hpp>
 
 #include "gfx/pipeline/graphics_pipeline.hpp"
-#include "render/renderer.hpp"
 #include "scene/scene.hpp"
 #include "io/spirv_loader.hpp"
 #include "resource/cpu/mesh.hpp"
 #include "resource/registry/resource_registry.hpp"
 
 namespace {
+    struct alignas(16) DrawConstants {
+        glm::mat4 transform{1.0F};
+        glm::vec4 normal_column_0{1.0F, 0.0F, 0.0F, 0.0F};
+        glm::vec4 normal_column_1{0.0F, 1.0F, 0.0F, 0.0F};
+        glm::vec4 normal_column_2{0.0F, 0.0F, 1.0F, 0.0F};
+        uint32_t point_light_count = 0;
+        uint32_t padding_0 = 0;
+        uint32_t padding_1 = 0;
+        uint32_t padding_2 = 0;
+    };
+
+    static_assert(sizeof(DrawConstants) == 128);
+
     auto create_descriptor_set_layout(const Device& device, std::span<const vk::DescriptorSetLayoutBinding> bindings) -> vk::raii::DescriptorSetLayout {
         vk::DescriptorSetLayoutCreateInfo create_info{};
         create_info.setBindings(bindings);
@@ -28,7 +44,10 @@ namespace {
             .setBinding(0)
             .setDescriptorType(vk::DescriptorType::eUniformBuffer)
             .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex);
+            .setStageFlags(
+                vk::ShaderStageFlagBits::eVertex |
+                vk::ShaderStageFlagBits::eFragment
+            );
 
         vk::DescriptorSetLayoutBinding sampler_binding{};
         sampler_binding
@@ -44,34 +63,128 @@ namespace {
             .setDescriptorCount(1)
             .setStageFlags(vk::ShaderStageFlagBits::eFragment);
 
+        vk::DescriptorSetLayoutBinding metallic_roughness_texture_binding{};
+        metallic_roughness_texture_binding
+            .setBinding(2)
+            .setDescriptorType(vk::DescriptorType::eSampledImage)
+            .setDescriptorCount(1)
+            .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+        vk::DescriptorSetLayoutBinding normal_texture_binding{};
+        normal_texture_binding
+            .setBinding(3)
+            .setDescriptorType(vk::DescriptorType::eSampledImage)
+            .setDescriptorCount(1)
+            .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+        vk::DescriptorSetLayoutBinding occlusion_texture_binding{};
+        occlusion_texture_binding
+            .setBinding(4)
+            .setDescriptorType(vk::DescriptorType::eSampledImage)
+            .setDescriptorCount(1)
+            .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+        vk::DescriptorSetLayoutBinding emissive_texture_binding{};
+        emissive_texture_binding
+            .setBinding(5)
+            .setDescriptorType(vk::DescriptorType::eSampledImage)
+            .setDescriptorCount(1)
+            .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+        vk::DescriptorSetLayoutBinding material_parameter_binding{};
+        material_parameter_binding
+            .setBinding(6)
+            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+            .setDescriptorCount(1)
+            .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+        vk::DescriptorSetLayoutBinding light_storage_binding{};
+        light_storage_binding
+            .setBinding(0)
+            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+            .setDescriptorCount(1)
+            .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+        vk::DescriptorSetLayoutBinding ibl_sampler_binding{};
+        ibl_sampler_binding
+            .setBinding(0)
+            .setDescriptorType(vk::DescriptorType::eSampler)
+            .setDescriptorCount(1)
+            .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+        vk::DescriptorSetLayoutBinding irradiance_binding{};
+        irradiance_binding
+            .setBinding(1)
+            .setDescriptorType(vk::DescriptorType::eSampledImage)
+            .setDescriptorCount(1)
+            .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+        vk::DescriptorSetLayoutBinding prefiltered_binding{};
+        prefiltered_binding
+            .setBinding(2)
+            .setDescriptorType(vk::DescriptorType::eSampledImage)
+            .setDescriptorCount(1)
+            .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+        vk::DescriptorSetLayoutBinding brdf_lut_binding{};
+        brdf_lut_binding
+            .setBinding(3)
+            .setDescriptorType(vk::DescriptorType::eSampledImage)
+            .setDescriptorCount(1)
+            .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
         const std::array camera_bindings{camera_uniform_binding};
         const std::array material_bindings{
             sampler_binding,
-            base_color_texture_binding
+            base_color_texture_binding,
+            metallic_roughness_texture_binding,
+            normal_texture_binding,
+            occlusion_texture_binding,
+            emissive_texture_binding,
+            material_parameter_binding
+        };
+        const std::array light_bindings{light_storage_binding};
+        const std::array ibl_bindings{
+            ibl_sampler_binding,
+            irradiance_binding,
+            prefiltered_binding,
+            brdf_lut_binding
         };
         std::vector<vk::raii::DescriptorSetLayout> layouts;
-        layouts.reserve(2);
+        layouts.reserve(4);
         layouts.emplace_back(
             create_descriptor_set_layout(device, camera_bindings)
         );
         layouts.emplace_back(
             create_descriptor_set_layout(device, material_bindings)
         );
+        layouts.emplace_back(
+            create_descriptor_set_layout(device, light_bindings)
+        );
+        layouts.emplace_back(
+            create_descriptor_set_layout(device, ibl_bindings)
+        );
         return layouts;
     }
 
-    auto create_pipeline_layout(const Device& device, const std::vector<vk::raii::DescriptorSetLayout>& descriptor_set_layouts) -> vk::raii::PipelineLayout {
+    auto create_pipeline_layout(
+        const Device& device,
+        const std::vector<vk::raii::DescriptorSetLayout>& descriptor_set_layouts,
+        const vk::raii::DescriptorSetLayout& shadow_descriptor_set_layout
+    ) -> vk::raii::PipelineLayout {
         std::vector<vk::DescriptorSetLayout> layout_handles;
-        layout_handles.reserve(descriptor_set_layouts.size());
+        layout_handles.reserve(descriptor_set_layouts.size() + 1);
         for (const auto& layout : descriptor_set_layouts) {
             layout_handles.push_back(*layout);
         }
+        layout_handles.push_back(*shadow_descriptor_set_layout);
 
         const std::array push_constant_ranges{
             vk::PushConstantRange{
-                .stageFlags = vk::ShaderStageFlagBits::eVertex,
+                .stageFlags = vk::ShaderStageFlagBits::eVertex |
+                    vk::ShaderStageFlagBits::eFragment,
                 .offset = 0,
-                .size = sizeof(glm::mat4)
+                .size = sizeof(DrawConstants)
             }
         };
         vk::PipelineLayoutCreateInfo create_info{};
@@ -117,6 +230,18 @@ namespace {
                 .binding = 0,
                 .format = vk::Format::eR32G32Sfloat,
                 .offset = offsetof(Vertex, texcoord)
+            },
+            vk::VertexInputAttributeDescription{
+                .location = 3,
+                .binding = 0,
+                .format = vk::Format::eR32G32B32Sfloat,
+                .offset = offsetof(Vertex, normal)
+            },
+            vk::VertexInputAttributeDescription{
+                .location = 4,
+                .binding = 0,
+                .format = vk::Format::eR32G32B32A32Sfloat,
+                .offset = offsetof(Vertex, tangent)
             }
         };
 
@@ -137,9 +262,16 @@ ForwardPass::ForwardPass(
     const Device& device,
     const MemoryAllocator& allocator,
     const vk::raii::RenderPass& render_pass,
+    const vk::raii::DescriptorSetLayout& shadow_descriptor_set_layout,
     uint32_t frame_count
 ) : descriptor_set_layouts_(create_descriptor_set_layouts(device)),
-    pipeline_layout_(create_pipeline_layout(device, descriptor_set_layouts_)),
+    pipeline_layout_(
+        create_pipeline_layout(
+            device,
+            descriptor_set_layouts_,
+            shadow_descriptor_set_layout
+        )
+    ),
     pipeline_(create_pipeline(device, render_pass, pipeline_layout_)),
     camera_writer_(
         device,
@@ -147,9 +279,24 @@ ForwardPass::ForwardPass(
         descriptor_set_layouts_.at(0),
         frame_count
     ),
-    material_writer_(device, descriptor_set_layouts_.at(1)) {}
+    material_writer_(
+        device,
+        allocator,
+        descriptor_set_layouts_.at(1)
+    ),
+    light_writer_(
+        device,
+        allocator,
+        descriptor_set_layouts_.at(2),
+        frame_count
+    ),
+    ibl_writer_(
+        device,
+        allocator,
+        descriptor_set_layouts_.at(3)
+    ) {}
 
-auto ForwardPass::write_material_descriptors(
+auto ForwardPass::write_material(
     std::span<const ResourceId<Material>> material_ids,
     const ResourceRegistry& registry
 ) -> void {
@@ -161,18 +308,34 @@ auto ForwardPass::write_material_descriptors(
     }
 }
 
-auto ForwardPass::record(
-    const RenderFrameContext& frame,
-    const Scene& scene,
-    const ResourceRegistry& registry
+auto ForwardPass::write_environment(
+    const HdrImageData& panorama,
+    ImageUploader& uploader
 ) -> void {
-    const auto aspect_ratio = static_cast<float>(frame.extent.width) / static_cast<float>(frame.extent.height);
+    ibl_writer_.write(panorama, uploader);
+}
+
+auto ForwardPass::record(
+    ExecutionContext context,
+    Input input,
+    Output output
+) -> void {
+    const auto aspect_ratio = static_cast<float>(output.extent.width) / static_cast<float>(output.extent.height);
     camera_writer_.write(
-        frame.frame_index,
+        context.frame_index,
         ViewProjection{
-            .view = scene.camera().view_matrix(),
-            .projection = scene.camera().projection_matrix(aspect_ratio)
+            .view = input.scene.camera().view_matrix(),
+            .projection = input.scene.camera().projection_matrix(aspect_ratio),
+            .camera_position = glm::vec4{
+                input.scene.camera().position(),
+                1.0F
+            }
         }
+    );
+    light_writer_.write(
+        context.frame_index,
+        input.scene.point_lights(),
+        input.shadow.light_bindings
     );
 
     std::array<vk::ClearValue, 2> clear_values{};
@@ -185,12 +348,12 @@ auto ForwardPass::record(
 
     vk::RenderPassBeginInfo render_pass_info{};
     render_pass_info
-        .setRenderPass(*frame.render_pass)
-        .setFramebuffer(*frame.framebuffer)
-        .setRenderArea(vk::Rect2D{{0, 0}, frame.extent})
+        .setRenderPass(*output.render_pass)
+        .setFramebuffer(*output.framebuffer)
+        .setRenderArea(vk::Rect2D{{0, 0}, output.extent})
         .setClearValues(clear_values);
 
-    auto& command_buffer = frame.command_buffer;
+    auto& command_buffer = context.command_buffer;
     command_buffer.beginRenderPass(
         render_pass_info,
         vk::SubpassContents::eInline
@@ -199,12 +362,12 @@ auto ForwardPass::record(
     const vk::Viewport viewport{
         .x = 0.0F,
         .y = 0.0F,
-        .width = static_cast<float>(frame.extent.width),
-        .height = static_cast<float>(frame.extent.height),
+        .width = static_cast<float>(output.extent.width),
+        .height = static_cast<float>(output.extent.height),
         .minDepth = 0.0F,
         .maxDepth = 1.0F
     };
-    const vk::Rect2D scissor{{0, 0}, frame.extent};
+    const vk::Rect2D scissor{{0, 0}, output.extent};
     command_buffer.setViewport(0, viewport);
     command_buffer.setScissor(0, scissor);
     command_buffer.bindPipeline(
@@ -213,7 +376,7 @@ auto ForwardPass::record(
     );
 
     const std::array camera_descriptor_sets{
-        *camera_writer_.descriptor_set(frame.frame_index)
+        *camera_writer_.descriptor_set(context.frame_index)
     };
     command_buffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
@@ -223,15 +386,61 @@ auto ForwardPass::record(
         {}
     );
 
-    for (const auto& entity : scene.entities()) {
-        command_buffer.pushConstants<glm::mat4>(
+    const std::array shadow_descriptor_sets{
+        input.shadow.descriptor_set
+    };
+    command_buffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        *pipeline_layout_,
+        4,
+        shadow_descriptor_sets,
+        {}
+    );
+
+    const std::array light_descriptor_sets{
+        *light_writer_.descriptor_set(context.frame_index)
+    };
+    command_buffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        *pipeline_layout_,
+        2,
+        light_descriptor_sets,
+        {}
+    );
+
+    const std::array ibl_descriptor_sets{
+        *ibl_writer_.descriptor_set()
+    };
+    command_buffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        *pipeline_layout_,
+        3,
+        ibl_descriptor_sets,
+        {}
+    );
+
+    for (const auto& entity : input.scene.entities()) {
+        const auto model_matrix = entity.model_matrix();
+        const auto normal_matrix = glm::transpose(
+            glm::inverse(glm::mat3{model_matrix})
+        );
+        command_buffer.pushConstants<DrawConstants>(
             *pipeline_layout_,
-            vk::ShaderStageFlagBits::eVertex,
+            vk::ShaderStageFlagBits::eVertex |
+                vk::ShaderStageFlagBits::eFragment,
             0,
-            entity.model_matrix()
+            DrawConstants{
+                .transform = model_matrix,
+                .normal_column_0 = glm::vec4{normal_matrix[0], 0.0F},
+                .normal_column_1 = glm::vec4{normal_matrix[1], 0.0F},
+                .normal_column_2 = glm::vec4{normal_matrix[2], 0.0F},
+                .point_light_count = light_writer_.light_count(
+                    context.frame_index
+                )
+            }
         );
 
-        const auto& model = registry.query(entity.model_id());
+        const auto& model = input.registry.query(entity.model_id());
         for (const auto& mesh : model.meshes()) {
             const std::array material_descriptor_sets{
                 *material_writer_.descriptor_set(mesh.material())

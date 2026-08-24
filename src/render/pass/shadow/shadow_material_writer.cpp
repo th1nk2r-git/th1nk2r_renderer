@@ -1,4 +1,4 @@
-#include "render/pass/forward/material_writer.hpp"
+#include "render/pass/shadow/shadow_material_writer.hpp"
 
 #include <array>
 #include <limits>
@@ -11,29 +11,16 @@
 #include "resource/gpu/texture.hpp"
 
 namespace {
-    constexpr uint32_t texture_count = 5;
-
-    struct alignas(16) GpuMaterialParameters {
-        glm::vec4 base_color_factor{1.0F};
-        glm::vec4 emissive_normal_scale{0.0F, 0.0F, 0.0F, 1.0F};
-        glm::vec4 metallic_roughness_occlusion_alpha_cutoff{
-            0.0F, 1.0F, 1.0F, 0.5F
-        };
-        glm::uvec4 flags{0U};
+    struct alignas(16) GpuShadowMaterialParameters {
+        glm::vec4 alpha{1.0F, 0.5F, 0.0F, 0.0F};
     };
 
-    static_assert(sizeof(GpuMaterialParameters) == 64);
+    static_assert(sizeof(GpuShadowMaterialParameters) == 16);
 
     auto checked_material_capacity(uint32_t max_material_count) -> uint32_t {
         if (max_material_count == 0) {
             throw std::invalid_argument(
-                "material writer requires a non-zero material capacity"
-            );
-        }
-        if (max_material_count >
-            std::numeric_limits<uint32_t>::max() / texture_count) {
-            throw std::overflow_error(
-                "material descriptor count exceeds uint32_t"
+                "shadow material writer requires a non-zero capacity"
             );
         }
         return max_material_count;
@@ -48,20 +35,17 @@ namespace {
         }
         if (value >
             std::numeric_limits<vk::DeviceSize>::max() - alignment + 1) {
-            throw std::overflow_error("material buffer alignment overflow");
+            throw std::overflow_error(
+                "shadow material parameter alignment overflow"
+            );
         }
         return ((value + alignment - 1) / alignment) * alignment;
     }
 
     auto parameter_stride(const Device& device) -> vk::DeviceSize {
         const auto limits = device.physical_device().getProperties().limits;
-        if (sizeof(GpuMaterialParameters) > limits.maxUniformBufferRange) {
-            throw std::runtime_error(
-                "material parameters exceed maxUniformBufferRange"
-            );
-        }
         return align_up(
-            sizeof(GpuMaterialParameters),
+            sizeof(GpuShadowMaterialParameters),
             limits.minUniformBufferOffsetAlignment
         );
     }
@@ -72,9 +56,39 @@ namespace {
     ) -> vk::DeviceSize {
         if (stride > std::numeric_limits<vk::DeviceSize>::max() /
             max_material_count) {
-            throw std::overflow_error("material parameter buffer overflow");
+            throw std::overflow_error(
+                "shadow material parameter buffer overflow"
+            );
         }
         return stride * max_material_count;
+    }
+
+    auto create_descriptor_set_layout(
+        const Device& device
+    ) -> vk::raii::DescriptorSetLayout {
+        const std::array bindings{
+            vk::DescriptorSetLayoutBinding{
+                .binding = 0,
+                .descriptorType = vk::DescriptorType::eSampler,
+                .descriptorCount = 1,
+                .stageFlags = vk::ShaderStageFlagBits::eFragment
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding = 1,
+                .descriptorType = vk::DescriptorType::eSampledImage,
+                .descriptorCount = 1,
+                .stageFlags = vk::ShaderStageFlagBits::eFragment
+            },
+            vk::DescriptorSetLayoutBinding{
+                .binding = 2,
+                .descriptorType = vk::DescriptorType::eUniformBuffer,
+                .descriptorCount = 1,
+                .stageFlags = vk::ShaderStageFlagBits::eFragment
+            }
+        };
+        vk::DescriptorSetLayoutCreateInfo create_info{};
+        create_info.setBindings(bindings);
+        return device.logical_device().createDescriptorSetLayout(create_info);
     }
 
     auto create_descriptor_pool(
@@ -83,11 +97,11 @@ namespace {
     ) -> vk::raii::DescriptorPool {
         const std::array pool_sizes{
             vk::DescriptorPoolSize{
-                vk::DescriptorType::eSampledImage,
-                max_material_count * texture_count
+                vk::DescriptorType::eSampler,
+                max_material_count
             },
             vk::DescriptorPoolSize{
-                vk::DescriptorType::eSampler,
+                vk::DescriptorType::eSampledImage,
                 max_material_count
             },
             vk::DescriptorPoolSize{
@@ -108,39 +122,28 @@ namespace {
         create_info
             .setMagFilter(vk::Filter::eLinear)
             .setMinFilter(vk::Filter::eLinear)
-            .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+            .setMipmapMode(vk::SamplerMipmapMode::eNearest)
             .setAddressModeU(vk::SamplerAddressMode::eRepeat)
             .setAddressModeV(vk::SamplerAddressMode::eRepeat)
             .setAddressModeW(vk::SamplerAddressMode::eRepeat)
-            .setMipLodBias(0.0F)
             .setAnisotropyEnable(false)
-            .setMaxAnisotropy(1.0F)
             .setCompareEnable(false)
-            .setCompareOp(vk::CompareOp::eNever)
             .setMinLod(0.0F)
-            .setMaxLod(std::numeric_limits<float>::max())
-            .setBorderColor(vk::BorderColor::eIntOpaqueBlack)
+            .setMaxLod(0.0F)
+            .setBorderColor(vk::BorderColor::eFloatOpaqueWhite)
             .setUnnormalizedCoordinates(false);
         return device.logical_device().createSampler(create_info);
     }
-
-    auto texture_info(const Texture& texture) -> vk::DescriptorImageInfo {
-        return vk::DescriptorImageInfo{
-            .imageView = *texture.image_view(),
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-        };
-    }
 }
 
-MaterialWriter::MaterialWriter(
+ShadowMaterialWriter::ShadowMaterialWriter(
     const Device& device,
     const MemoryAllocator& allocator,
-    const vk::raii::DescriptorSetLayout& descriptor_set_layout,
     uint32_t max_material_count
 ) : device_(device),
-    descriptor_set_layout_(descriptor_set_layout),
     max_material_count_(checked_material_capacity(max_material_count)),
     parameter_stride_(parameter_stride(device)),
+    descriptor_set_layout_(create_descriptor_set_layout(device)),
     parameter_buffer_(
         allocator,
         BufferDesc{
@@ -155,21 +158,23 @@ MaterialWriter::MaterialWriter(
     ),
     descriptor_pool_(create_descriptor_pool(device, max_material_count_)) {}
 
-auto MaterialWriter::write(
+auto ShadowMaterialWriter::write(
     ResourceId<Material> id,
     const Material& material
 ) -> void {
     if (!id.valid()) {
-        throw std::invalid_argument("material resource id is invalid");
+        throw std::invalid_argument(
+            "shadow material resource id is invalid"
+        );
     }
     if (bindings_.contains(id.value())) {
         throw std::logic_error(
-            "material descriptors are already written for this resource"
+            "shadow material descriptors are already written"
         );
     }
     if (next_material_index_ >= max_material_count_) {
         throw std::length_error(
-            "material count exceeds material writer capacity"
+            "shadow material count exceeds writer capacity"
         );
     }
 
@@ -180,37 +185,16 @@ auto MaterialWriter::write(
         .setSetLayouts(layouts);
     auto descriptor_sets =
         device_.logical_device().allocateDescriptorSets(allocate_info);
-    if (descriptor_sets.size() != 1) {
-        throw std::runtime_error(
-            "material descriptor allocation returned an unexpected count"
-        );
-    }
-
     auto descriptor_set = std::move(descriptor_sets.front());
     auto sampler = create_sampler(device_);
 
-    const auto& base_color_factor = material.base_color_factor();
-    const auto& emissive_color = material.emissive_color();
-    const GpuMaterialParameters parameters{
-        .base_color_factor = glm::vec4{
-            base_color_factor[0],
-            base_color_factor[1],
-            base_color_factor[2],
-            base_color_factor[3]
-        },
-        .emissive_normal_scale = glm::vec4{
-            emissive_color[0],
-            emissive_color[1],
-            emissive_color[2],
-            material.normal_scale()
-        },
-        .metallic_roughness_occlusion_alpha_cutoff = glm::vec4{
-            material.metallic(),
-            material.roughness(),
-            material.occlusion_strength(),
-            material.alpha_cutoff()
-        },
-        .flags = glm::uvec4{material.alpha_mask() ? 1U : 0U, 0U, 0U, 0U}
+    const auto parameters = GpuShadowMaterialParameters{
+        .alpha = glm::vec4{
+            material.base_color_factor()[3],
+            material.alpha_cutoff(),
+            material.alpha_mask() ? 1.0F : 0.0F,
+            0.0F
+        }
     };
     const auto parameter_offset =
         parameter_stride_ * next_material_index_;
@@ -221,41 +205,34 @@ auto MaterialWriter::write(
     );
 
     const vk::DescriptorImageInfo sampler_info{.sampler = *sampler};
-    const std::array texture_infos{
-        texture_info(material.base_color_texture()),
-        texture_info(material.metallic_roughness_texture()),
-        texture_info(material.normal_texture()),
-        texture_info(material.occlusion_texture()),
-        texture_info(material.emissive_texture())
+    const vk::DescriptorImageInfo texture_info{
+        .imageView = *material.base_color_texture().image_view(),
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
     };
     const vk::DescriptorBufferInfo parameter_info{
         .buffer = parameter_buffer_.get(),
         .offset = parameter_offset,
-        .range = sizeof(GpuMaterialParameters)
+        .range = sizeof(parameters)
     };
-
-    std::array<vk::WriteDescriptorSet, 7> writes{};
-    writes[0]
-        .setDstSet(*descriptor_set)
-        .setDstBinding(0)
-        .setDstArrayElement(0)
-        .setDescriptorType(vk::DescriptorType::eSampler)
-        .setImageInfo(sampler_info);
-    for (uint32_t index = 0; index < texture_count; ++index) {
-        writes[index + 1]
+    const std::array writes{
+        vk::WriteDescriptorSet{}
             .setDstSet(*descriptor_set)
-            .setDstBinding(index + 1)
-            .setDstArrayElement(0)
+            .setDstBinding(0)
+            .setDescriptorType(vk::DescriptorType::eSampler)
+            .setImageInfo(sampler_info),
+        vk::WriteDescriptorSet{}
+            .setDstSet(*descriptor_set)
+            .setDstBinding(1)
             .setDescriptorType(vk::DescriptorType::eSampledImage)
-            .setImageInfo(texture_infos[index]);
-    }
-    writes[6]
-        .setDstSet(*descriptor_set)
-        .setDstBinding(6)
-        .setDstArrayElement(0)
-        .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-        .setBufferInfo(parameter_info);
+            .setImageInfo(texture_info),
+        vk::WriteDescriptorSet{}
+            .setDstSet(*descriptor_set)
+            .setDstBinding(2)
+            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+            .setBufferInfo(parameter_info)
+    };
     device_.logical_device().updateDescriptorSets(writes, {});
+
     bindings_.try_emplace(
         id.value(),
         MaterialBinding{

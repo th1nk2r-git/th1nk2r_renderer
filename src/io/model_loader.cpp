@@ -1,28 +1,35 @@
 #include "io/model_loader.hpp"
 
 #include <assimp/Importer.hpp>
+#include <assimp/GltfMaterial.h>
 #include <assimp/config.h>
 #include <assimp/material.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstddef>
+#include <cmath>
 #include <filesystem>
 #include <limits>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 #include "io/image_loader.hpp"
 
 namespace {
     constexpr unsigned int import_flags =
         aiProcess_Triangulate |
+        aiProcess_CalcTangentSpace |
         aiProcess_JoinIdenticalVertices |
         aiProcess_SortByPType |
         aiProcess_PreTransformVertices |
+        aiProcess_GenSmoothNormals |
         aiProcess_ImproveCacheLocality |
         aiProcess_FlipUVs;
 
@@ -45,6 +52,44 @@ namespace {
         aiTextureType_EMISSION_COLOR,
         aiTextureType_EMISSIVE
     };
+
+    auto is_gltf_model(const std::filesystem::path& path) -> bool {
+        auto extension = path.extension().string();
+        std::ranges::transform(
+            extension,
+            extension.begin(),
+            [](unsigned char character) {
+                return static_cast<char>(std::tolower(character));
+            }
+        );
+        return extension == ".gltf" || extension == ".glb";
+    }
+
+    auto normal_scale(const aiMaterial& material) -> float {
+        float result = 1.0F;
+        for (const auto texture_type : normal_texture_types) {
+            if (material.Get(
+                    AI_MATKEY_GLTF_TEXTURE_SCALE(texture_type, 0),
+                    result
+                ) == AI_SUCCESS) {
+                break;
+            }
+        }
+        return result;
+    }
+
+    auto occlusion_strength(const aiMaterial& material) -> float {
+        float result = 1.0F;
+        for (const auto texture_type : occlusion_texture_types) {
+            if (material.Get(
+                    AI_MATKEY_GLTF_TEXTURE_STRENGTH(texture_type, 0),
+                    result
+                ) == AI_SUCCESS) {
+                break;
+            }
+        }
+        return result;
+    }
 
     auto checked_index_count(const aiMesh& source) -> size_t {
         constexpr auto indices_per_triangle = size_t{3};
@@ -73,6 +118,12 @@ namespace {
 
         const bool has_colors = source.HasVertexColors(0);
         const bool has_texcoords = source.HasTextureCoords(0);
+        const bool has_tangents = source.HasTangentsAndBitangents();
+        if (!source.HasNormals()) {
+            throw std::runtime_error(
+                "imported mesh does not contain vertex normals"
+            );
+        }
 
         for (unsigned int i = 0; i < source.mNumVertices; ++i) {
             const auto& position = source.mVertices[i];
@@ -97,6 +148,53 @@ namespace {
                 const auto& texcoord = source.mTextureCoords[0][i];
                 vertex.texcoord[0] = texcoord.x;
                 vertex.texcoord[1] = texcoord.y;
+            }
+
+            const auto& normal = source.mNormals[i];
+            vertex.normal[0] = normal.x;
+            vertex.normal[1] = normal.y;
+            vertex.normal[2] = normal.z;
+
+            if (has_tangents) {
+                const auto& tangent = source.mTangents[i];
+                const auto& bitangent = source.mBitangents[i];
+                vertex.tangent[0] = tangent.x;
+                vertex.tangent[1] = tangent.y;
+                vertex.tangent[2] = tangent.z;
+
+                const auto cross_x = normal.y * tangent.z -
+                    normal.z * tangent.y;
+                const auto cross_y = normal.z * tangent.x -
+                    normal.x * tangent.z;
+                const auto cross_z = normal.x * tangent.y -
+                    normal.y * tangent.x;
+                const auto orientation = cross_x * bitangent.x +
+                    cross_y * bitangent.y +
+                    cross_z * bitangent.z;
+                vertex.tangent[3] = orientation < 0.0F ? -1.0F : 1.0F;
+            }
+            else if (std::abs(normal.z) < 0.999F) {
+                const auto length = std::sqrt(
+                    normal.x * normal.x + normal.y * normal.y
+                );
+                if (length > 1.0e-8F) {
+                    vertex.tangent[0] = -normal.y / length;
+                    vertex.tangent[1] = normal.x / length;
+                    vertex.tangent[2] = 0.0F;
+                    vertex.tangent[3] = 1.0F;
+                }
+                else {
+                    vertex.tangent[0] = 1.0F;
+                    vertex.tangent[1] = 0.0F;
+                    vertex.tangent[2] = 0.0F;
+                    vertex.tangent[3] = 1.0F;
+                }
+            }
+            else {
+                vertex.tangent[0] = 1.0F;
+                vertex.tangent[1] = 0.0F;
+                vertex.tangent[2] = 0.0F;
+                vertex.tangent[3] = 1.0F;
             }
 
             result.vertices_.push_back(vertex);
@@ -220,6 +318,30 @@ namespace {
             );
         }
 
+        float metallic = is_gltf_model(model_path) ? 1.0F : 0.0F;
+        static_cast<void>(
+            source.Get(AI_MATKEY_METALLIC_FACTOR, metallic)
+        );
+
+        float roughness = 1.0F;
+        static_cast<void>(
+            source.Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness)
+        );
+
+        aiColor3D emissive_color{0.0F, 0.0F, 0.0F};
+        static_cast<void>(
+            source.Get(AI_MATKEY_COLOR_EMISSIVE, emissive_color)
+        );
+
+        aiString alpha_mode;
+        const bool alpha_mask =
+            source.Get(AI_MATKEY_GLTF_ALPHAMODE, alpha_mode) == AI_SUCCESS &&
+            std::string_view{alpha_mode.C_Str()} == "MASK";
+        float alpha_cutoff = 0.5F;
+        static_cast<void>(
+            source.Get(AI_MATKEY_GLTF_ALPHACUTOFF, alpha_cutoff)
+        );
+
         return MaterialData{
             .base_color_ = {
                 base_color.r,
@@ -227,6 +349,17 @@ namespace {
                 base_color.b,
                 base_color.a
             },
+            .metallic_ = metallic,
+            .roughness_ = roughness,
+            .emissive_color_ = {
+                emissive_color.r,
+                emissive_color.g,
+                emissive_color.b
+            },
+            .normal_scale_ = normal_scale(source),
+            .occlusion_strength_ = occlusion_strength(source),
+            .alpha_mask_ = alpha_mask,
+            .alpha_cutoff_ = alpha_cutoff,
             .base_color_texture_ = load_material_texture(
                 source,
                 scene,

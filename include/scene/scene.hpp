@@ -7,7 +7,9 @@
 
 #include "scene/camera.hpp"
 #include "scene/entity.hpp"
+#include "scene/light.hpp"
 #include "resource/gpu/resource_id.hpp"
+
 
 class Scene {
 public:
@@ -27,6 +29,14 @@ public:
     }
 
     auto set_camera(Camera&& camera) noexcept -> void;
+
+    auto add_point_light(PointLight point_light) -> void {
+        point_lights_.push_back(point_light);
+    }
+
+    auto point_lights() const noexcept -> const std::vector<PointLight>& {
+        return point_lights_;
+    }
 
     auto entities() noexcept -> std::span<Entity> {
         return entities_;
@@ -49,6 +59,7 @@ public:
 private:
     Camera camera_;
     std::vector<Entity> entities_;
+    std::vector<PointLight> point_lights_;
 };
 
 #endif

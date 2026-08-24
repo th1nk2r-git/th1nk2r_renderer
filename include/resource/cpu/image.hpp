@@ -12,4 +12,11 @@ struct ImageData {
     std::vector<std::byte> pixels;
 };
 
+struct HdrImageData {
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t channels = 4;
+    std::vector<float> pixels;
+};
+
 #endif

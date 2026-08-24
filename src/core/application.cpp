@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "io/model_loader.hpp"
+#include "io/image_loader.hpp"
 #include "resource/gpu/material.hpp"
 #include "resource/gpu/mesh.hpp"
 #include "resource/gpu/model.hpp"
@@ -83,17 +84,28 @@ Application::Application()
     : window_(1200, 800),
       device_context_(window_),
       renderer_(device_context_, window_),
+      shadow_pass_(
+          device_context_.device(),
+          device_context_.allocator(),
+          renderer_.frame_count()
+      ),
       forward_pass_(
           device_context_.device(),
           device_context_.allocator(),
           renderer_.render_pass(),
+          shadow_pass_.descriptor_set_layout(),
           renderer_.frame_count()
       ),
       input_system_(window_, scene_.camera()) {}
 
 auto Application::run() -> void {
     const auto material_ids = load_models("./assets");
-    forward_pass_.write_material_descriptors(material_ids, registry_);
+    shadow_pass_.write_material(material_ids, registry_);
+    forward_pass_.write_material(material_ids, registry_);
+    forward_pass_.write_environment(
+        load_image_rgba32f("./assets/sponza/mud_road_puresky_2k.hdr"),
+        device_context_.image_uploader()
+    );
     setup_scene();
     loop();
 }
@@ -158,6 +170,20 @@ auto Application::setup_scene() -> void {
         registry_.query_model_id("sponza"),
         Transform {}
     );
+
+    scene_.camera().set_position(glm::vec3{0.0F, 2.0F, 7.0F});
+
+    scene_.add_point_light(
+        PointLight{
+            .position = glm::vec3{0.0F, 4.5F, 0.0F},
+            .color = glm::vec3{1.0F, 0.9F, 0.75F},
+            .intensity = 100.0F,
+            .casts_shadow = true,
+            .shadow_near = 0.1F,
+            .shadow_far = 25.0F,
+            .source_radius = 0.2F
+        }
+    );
 }
 
 auto Application::update(float delta_time) -> void {
@@ -194,10 +220,31 @@ auto Application::loop() -> void {
             renderer_.render(
                 device_context_.device(),
                 [this](const RenderFrameContext& frame) {
+                    const auto shadow_output = shadow_pass_.record(
+                        ShadowPass::ExecutionContext{
+                            .command_buffer = frame.command_buffer,
+                            .frame_index = frame.frame_index
+                        },
+                        ShadowPass::Input{
+                            .scene = scene_,
+                            .registry = registry_
+                        }
+                    );
                     forward_pass_.record(
-                        frame,
-                        scene_,
-                        registry_
+                        ForwardPass::ExecutionContext{
+                            .command_buffer = frame.command_buffer,
+                            .frame_index = frame.frame_index
+                        },
+                        ForwardPass::Input{
+                            .scene = scene_,
+                            .registry = registry_,
+                            .shadow = shadow_output
+                        },
+                        ForwardPass::Output{
+                            .render_pass = frame.render_pass,
+                            .framebuffer = frame.framebuffer,
+                            .extent = frame.extent
+                        }
                     );
                 }
             );

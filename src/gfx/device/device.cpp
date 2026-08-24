@@ -45,6 +45,9 @@ auto Device::select_physical_device(
         if (available_formats.empty() || available_present_modes.empty()) {
             continue;
         }
+        if (!physical_device.getFeatures().imageCubeArray) {
+            continue;
+        }
         auto required_extensions = std::set<std::string>{
             VK_KHR_SWAPCHAIN_EXTENSION_NAME
         };
@@ -73,7 +76,10 @@ auto Device::find_queue_families(
     std::optional<uint32_t> present_family;
 
     for (uint32_t index = 0; index < static_cast<uint32_t>(properties.size()); ++index) {
-        if (properties[index].queueFlags & vk::QueueFlagBits::eGraphics) {
+        const auto required_graphics_flags =
+            vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute;
+        if ((properties[index].queueFlags & required_graphics_flags) ==
+            required_graphics_flags) {
             graphics_family = index;
         }
         if (physical_device.getSurfaceSupportKHR(index, *surface)) {
@@ -114,13 +120,17 @@ auto Device::create_logical_device(
         vk::KHRSwapchainExtensionName
     };
 
+    vk::PhysicalDeviceFeatures required_features{};
+    required_features.setImageCubeArray(true);
+
     const vk::DeviceCreateInfo create_info{
         .queueCreateInfoCount =
             static_cast<uint32_t>(queue_create_infos.size()),
         .pQueueCreateInfos = queue_create_infos.data(),
         .enabledExtensionCount =
             static_cast<uint32_t>(required_device_extensions.size()),
-        .ppEnabledExtensionNames = required_device_extensions.data()
+        .ppEnabledExtensionNames = required_device_extensions.data(),
+        .pEnabledFeatures = &required_features
     };
 
     return physical_device.createDevice(create_info);

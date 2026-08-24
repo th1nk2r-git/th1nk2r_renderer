@@ -6,8 +6,7 @@
 Renderer::Renderer(
     const DeviceContext& device_context,
     const Window& window
-) : swapchain_(device_context, window),
-    frames_in_flight_(device_context.device()) {}
+) : swapchain_(device_context, window), frames_in_flight_(device_context.device()) {}
 
 auto Renderer::submit(const Device& device, uint32_t image_id) -> void {
     auto& frame = frames_in_flight_.current_frame();

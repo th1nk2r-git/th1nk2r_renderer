@@ -22,3 +22,14 @@ from the relevant rights holder.
 Reference:
 
 - <https://github.com/KhronosGroup/glTF-Sample-Assets/blob/main/Models/Sponza/README.md>
+
+## Pillars HDRI
+
+`sponza/pillars_2k.hdr` is the Pillars HDRI by Greg Zaal, downloaded from
+Poly Haven and used as this sample scene's image-based lighting environment.
+Poly Haven distributes the asset under CC0.
+
+Source and license:
+
+- <https://polyhaven.com/a/pillars>
+- <https://polyhaven.com/license>

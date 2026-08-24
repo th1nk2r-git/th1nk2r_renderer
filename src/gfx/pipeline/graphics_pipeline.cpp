@@ -3,6 +3,7 @@
 #include <array>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 auto GraphicsPipelineFactory::create(
     const Device& device,
@@ -53,7 +54,10 @@ auto GraphicsPipelineFactory::create(
         .setPolygonMode(vk::PolygonMode::eFill)
         .setCullMode(desc.cull_mode)
         .setFrontFace(desc.front_face)
-        .setDepthBiasEnable(false)
+        .setDepthBiasEnable(desc.depth_bias_enable)
+        .setDepthBiasConstantFactor(desc.depth_bias_constant_factor)
+        .setDepthBiasClamp(desc.depth_bias_clamp)
+        .setDepthBiasSlopeFactor(desc.depth_bias_slope_factor)
         .setLineWidth(1.0F);
 
     vk::PipelineMultisampleStateCreateInfo multisample_state{};
@@ -87,10 +91,14 @@ auto GraphicsPipelineFactory::create(
             vk::ColorComponentFlagBits::eA
         );
 
+    const std::vector color_blend_attachments(
+        desc.color_attachment_count,
+        color_blend_attachment
+    );
     vk::PipelineColorBlendStateCreateInfo color_blend_state{};
     color_blend_state
         .setLogicOpEnable(false)
-        .setAttachments(color_blend_attachment);
+        .setAttachments(color_blend_attachments);
 
     constexpr std::array dynamic_states{
         vk::DynamicState::eViewport,

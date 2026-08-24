@@ -30,6 +30,16 @@ struct GraphicsPipelineDesc {
     vk::CompareOp depth_compare_op = vk::CompareOp::eLess;
 
     bool blend_enable = false;
+
+    uint32_t color_attachment_count = 1;
+
+    bool depth_bias_enable = false;
+
+    float depth_bias_constant_factor = 0.0F;
+
+    float depth_bias_clamp = 0.0F;
+
+    float depth_bias_slope_factor = 0.0F;
 };
 
 namespace GraphicsPipelineFactory {
