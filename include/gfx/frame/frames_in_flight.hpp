@@ -1,13 +1,49 @@
 #ifndef FRAMES_IN_FLIGHT_HPP
 #define FRAMES_IN_FLIGHT_HPP
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <vector>
 
 #include "gfx/device/device.hpp"
 
+struct CommandRecordingSlot {
+    explicit CommandRecordingSlot(const Device& device);
+
+    CommandRecordingSlot(const CommandRecordingSlot&) = delete;
+    auto operator=(const CommandRecordingSlot&) -> CommandRecordingSlot& = delete;
+    CommandRecordingSlot(CommandRecordingSlot&&) noexcept = default;
+    auto operator=(CommandRecordingSlot&&) noexcept -> CommandRecordingSlot& = default;
+
+    template <typename Function>
+    auto record(Function&& execute) -> void {
+        const vk::CommandBufferBeginInfo begin_info{
+            .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+        };
+        command_buffer.begin(begin_info);
+        try {
+            std::forward<Function>(execute)(command_buffer);
+            command_buffer.end();
+        }
+        catch (...) {
+            try {
+                command_buffer.reset();
+            }
+            catch (...) {
+            }
+            throw;
+        }
+    }
+
+    vk::raii::CommandPool command_pool = nullptr;
+    vk::raii::CommandBuffer command_buffer = nullptr;
+};
+
 struct Frame {
+    static constexpr std::size_t recording_slot_count = 2;
+
     explicit Frame(const Device& device);
 
     Frame(const Frame&) = delete;
@@ -16,18 +52,20 @@ struct Frame {
     auto operator=(Frame&&) noexcept -> Frame& = default;
 
     template <typename Function>
-    auto record(Function&& execute) -> void {
-        vk::CommandBufferBeginInfo begin_info{};
-        begin_info.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-        command_buffer.begin(begin_info);
-        execute(command_buffer);
-        command_buffer.end();
+    auto record(std::size_t slot_index, Function&& execute) -> void {
+        recording_slots_.at(slot_index).record(
+            std::forward<Function>(execute)
+        );
     }
 
-    vk::raii::CommandPool command_pool = nullptr;
-    vk::raii::CommandBuffer command_buffer = nullptr;
+    auto command_buffers() const noexcept
+        -> std::array<vk::CommandBuffer, recording_slot_count>;
+
     vk::raii::Semaphore image_available = nullptr;
     vk::raii::Fence in_flight_fence = nullptr;
+
+private:
+    std::array<CommandRecordingSlot, recording_slot_count> recording_slots_;
 };
 
 class FramesInFlight {

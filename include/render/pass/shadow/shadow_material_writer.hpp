@@ -20,16 +20,13 @@ public:
     );
 
     ShadowMaterialWriter(const ShadowMaterialWriter&) = delete;
-    auto operator=(const ShadowMaterialWriter&)
-        -> ShadowMaterialWriter& = delete;
+    auto operator=(const ShadowMaterialWriter&) -> ShadowMaterialWriter& = delete;
     ShadowMaterialWriter(ShadowMaterialWriter&&) = delete;
-    auto operator=(ShadowMaterialWriter&&)
-        -> ShadowMaterialWriter& = delete;
+    auto operator=(ShadowMaterialWriter&&) -> ShadowMaterialWriter& = delete;
 
     auto write(ResourceId<Material> id, const Material& material) -> void;
 
-    auto descriptor_set_layout() const noexcept
-        -> const vk::raii::DescriptorSetLayout& {
+    auto descriptor_set_layout() const noexcept -> const vk::raii::DescriptorSetLayout& {
         return descriptor_set_layout_;
     }
 

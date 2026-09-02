@@ -71,7 +71,13 @@ public:
         return output_descriptor_set_layout_;
     }
 
-    auto record(ExecutionContext context, Input input) -> Output;
+    auto prepare(uint32_t frame_index, const Scene& scene) -> Output;
+
+    auto record(
+        ExecutionContext context,
+        Input input,
+        const Output& output
+    ) -> void;
 
 private:
     struct FrameResources;

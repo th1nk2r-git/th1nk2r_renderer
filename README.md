@@ -2,7 +2,7 @@
 
 基于 **C++20** 与 **Vulkan 1.4** 构建的模块化实时渲染器。项目采用 Vulkan-Hpp RAII 管理 Vulkan 对象，使用 VMA 分配 GPU 内存，通过 Assimp、stb_image 与 Slang 建立模型导入、纹理处理和着色器编译链路，并使用 Dear ImGui 提供运行时性能覆盖层。
 
-渲染器将平台窗口、设备上下文、帧调度、资源系统、场景表达与渲染 Pass 分层组织，以清晰的所有权边界管理 GPU 资源。当前渲染路径支持 Metallic-Roughness PBR、基于计算着色器的 IBL 预计算、点光源 PCSS 全向软阴影、Mesh 级视锥剔除与天空盒渲染，并使用 Sponza 作为默认示例场景。
+渲染器将平台窗口、设备上下文、帧调度、资源系统、场景表达与渲染 Pass 分层组织，以清晰的所有权边界管理 GPU 资源。当前渲染路径支持 Metallic-Roughness PBR、基于计算着色器的 IBL 预计算、点光源 PCSS 全向软阴影、Mesh 级视锥剔除与天空盒渲染；帧内由八工作线程池调度阴影与前向两项主命令缓冲录制任务，并使用 Sponza 作为默认示例场景。
 
 ## 核心能力
 
@@ -30,6 +30,9 @@
 - 使用 Vulkan-Hpp RAII 管理实例、设备、Swapchain、Pipeline、Descriptor 与同步对象的生命周期。
 - 使用 Vulkan Memory Allocator（VMA）统一分配 Buffer 和 Image 显存。
 - 双帧并行，使用 Fence 和 Semaphore 管理 CPU/GPU 与呈现同步。
+- 使用包含八个常驻工作线程的任务队列调度命令录制；每帧投递 `ShadowPass` 与 `ForwardPass` 两项任务，主线程在提交前通过 `std::future` 等待两项录制任务完成并传播任务异常。
+- 每个在途帧提供两个独立的命令录制槽位。每个槽位分别持有一个可重置 Command Pool 和一个以 `eOneTimeSubmit` 标志录制的 Primary Command Buffer，阴影与前向录制不共享 Command Pool。
+- 阴影和前向 Command Buffer 按固定顺序组成同一个 Graphics Queue 提交：阴影命令在前，前向渲染与 ImGui Overlay 命令在后。
 - 使用 `FrameRateCounter` 统计渲染吞吐率，并通过 Dear ImGui 在左上角显示每秒更新的一秒平均帧率。
 - 优先选择 Mailbox Present Mode，不可用时回退到 FIFO。
 - 处理窗口缩放、最小化、`VK_ERROR_OUT_OF_DATE_KHR` 与 Swapchain/图形管线重建。
@@ -43,7 +46,7 @@
 - `FrameRateCounter` 使用 `std::chrono::steady_clock` 计时。采样时间达到一秒后，以成功完成的帧数除以实际采样时长，并保存本次区间的平均 FPS。
 - `ImGuiLayer` 创建并销毁 Dear ImGui Context，初始化 GLFW 与 Vulkan 后端，并关闭 ImGui 配置文件输出。
 - FPS 窗口固定在主视口坐标 `(10, 10)`，使用无装饰、自动尺寸、无输入、透明背景和零边框配置；文字基础字号为 `40.0`。
-- `ImGuiLayer` 在每帧生成 FPS 窗口的 Draw Data。`ForwardPass` 绘制场景与天空盒后，通过 Overlay 回调将 Draw Data 记录到当前 Command Buffer，再结束主 Render Pass。
+- `ImGuiLayer` 在每帧生成 FPS 窗口的 Draw Data。`ForwardPass` 绘制场景与天空盒后，通过 Overlay 回调将 Draw Data 记录到前向 Command Buffer，再结束主 Render Pass。
 - `Renderer` 暴露实际 Swapchain Image 数量。Swapchain 重建完成后，`Application` 使用新的 Render Pass 和 Image 数量重新初始化 ImGui Vulkan 后端。
 
 ## 设计原则
@@ -51,7 +54,8 @@
 - **显式资源所有权**：Vulkan RAII 与不可复制资源类型确保对象按依赖顺序释放。
 - **数据与运行时分离**：CPU 导入数据、GPU 资源对象和注册表分别承担解析、驻留与寻址职责。
 - **渲染职责解耦**：`Renderer` 负责帧调度与呈现，`ShadowPass` 和 `ForwardPass` 分别负责阴影与主渲染命令。
-- **帧内资源隔离**：命令缓冲、同步对象、相机数据、灯光数据与阴影资源按帧组织。
+- **并行录制资源隔离**：命令录制槽位按在途帧组织，每个槽位独占 Command Pool 与 Primary Command Buffer；相机、灯光和阴影资源同样按帧索引访问。
+- **显式执行顺序**：CPU 侧并行生成两组命令，GPU 侧在单次 Queue Submit 中依次执行阴影与前向 Command Buffer。
 - **可复现资产管线**：构建过程统一编译 Slang 着色器并部署运行时资源。
 
 ## 技术栈
@@ -71,7 +75,7 @@
 
 ## 架构
 
-项目按平台、设备、资源、场景、UI 和渲染职责拆分模块。`DeviceContext` 聚合 Vulkan 设备级基础设施，`Renderer` 管理帧调度与呈现，各渲染 Pass 独立维护其管线、描述符和命令记录逻辑，`ImGuiLayer` 负责性能覆盖层的生命周期与命令记录。
+项目按平台、设备、资源、场景、UI 和渲染职责拆分模块。`DeviceContext` 聚合 Vulkan 设备级基础设施，`Renderer` 管理帧调度与呈现，`ThreadPool<8>` 调度帧内命令录制任务，各渲染 Pass 独立维护其管线、描述符和命令记录逻辑，`ImGuiLayer` 负责性能覆盖层的生命周期与前向 Command Buffer 内的命令记录。
 
 ```mermaid
 flowchart LR
@@ -92,10 +96,18 @@ flowchart LR
     Scene --> Shadow
     Registry --> Forward["ForwardPass"]
     Scene --> Forward
-    Shadow --> Forward
+    Scene --> Prepare["ShadowPass::prepare"]
+    Prepare --> Shadow
+    Prepare --> Forward
+    Pool["ThreadPool&lt;8&gt;"] --> Shadow
+    Pool --> Forward
+    Shadow --> ShadowCB["Shadow Primary Command Buffer"]
+    Forward --> ForwardCB["Forward Primary Command Buffer"]
+    ShadowCB --> Renderer["Renderer / FramesInFlight"]
+    ForwardCB --> Renderer
     UI --> Forward
-    Forward --> Renderer["Renderer / FramesInFlight"]
-    Renderer --> Swapchain["Swapchain / Present"]
+    Renderer --> Submit["Ordered Graphics Queue Submit"]
+    Submit --> Swapchain["Swapchain / Present"]
 
     Device["DeviceContext"] --> Upload
     Device --> Shadow
@@ -108,10 +120,10 @@ flowchart LR
 
 | 模块 | 职责 |
 | --- | --- |
-| `core` | 应用生命周期、资源装载、主循环、输入调度与帧率统计 |
+| `core` | 应用生命周期、资源装载、主循环、输入调度、八工作线程任务队列与帧率统计 |
 | `platform` | GLFW 窗口及事件回调封装 |
 | `gfx/device` | Vulkan 实例与设备、VMA、Buffer/Image 上传器 |
-| `gfx/frame` | Swapchain、深度附件、Framebuffer 与帧同步 |
+| `gfx/frame` | Swapchain、深度附件、Framebuffer、帧同步与按帧隔离的命令录制槽位 |
 | `gfx/pipeline` | 图形管线创建与固定功能状态配置 |
 | `io` | SPIR-V、模型与图像读取 |
 | `resource` | CPU/GPU 资源、材质、网格、模型与资源注册表 |
@@ -123,7 +135,7 @@ flowchart LR
 ### 启动阶段
 
 1. 创建 GLFW 窗口、Vulkan 实例、Surface、物理/逻辑设备和 Swapchain。
-2. 创建帧同步资源、阴影 Pass、前向 Pass 与 ImGui 性能覆盖层。
+2. 创建帧同步与命令录制资源、阴影 Pass、前向 Pass、ImGui 性能覆盖层和八工作线程池。
 3. 递归扫描 `assets/`，导入模型、材质与纹理。
 4. 通过暂存资源将网格和图像批量上传至 GPU，并生成纹理 Mipmap。
 5. 加载 HDR 环境图，使用 Compute Shader 生成 IBL 所需的 Cubemap 与查找表。
@@ -136,10 +148,12 @@ flowchart LR
   -> 更新应用状态，生成 ImGui FPS Draw Data
   -> 等待当前帧 Fence
   -> 获取 Swapchain Image
-  -> 更新 Camera / Light Buffer
-  -> ShadowPass：为投影点光源记录六面深度
-  -> ForwardPass：构建相机视锥，执行 Mesh AABB 可见性判定，记录可见 Mesh 的 PBR 绘制、天空盒与 ImGui FPS 覆盖层
-  -> 提交 Graphics Queue
+  -> 准备当前帧的阴影面数据与灯光绑定
+  -> 将 ShadowPass 与 ForwardPass 两项录制任务分派至八工作线程池
+      -> 槽位 0：录制阴影 Primary Command Buffer，为投影点光源生成六面深度
+      -> 槽位 1：更新 Camera / Light Buffer，完成视锥剔除，并录制包含 PBR 绘制、天空盒与 ImGui FPS 覆盖层的前向 Primary Command Buffer
+  -> 等待两项录制任务完成并取得执行结果
+  -> 按 Shadow、Forward 顺序通过一次 Graphics Queue Submit 提交两个 Command Buffer
   -> Present
   -> 完成帧率计数，采样满一秒时更新平均 FPS
 ```
@@ -274,6 +288,10 @@ Pop-Location
 | 参数 | 当前值 |
 | --- | --- |
 | Frames in Flight | 2 |
+| 命令录制工作线程 | 8 个常驻线程 |
+| 每帧命令录制任务 | 2 项；分别录制 Shadow 与 Forward Command Buffer |
+| 每个在途帧的录制槽位 | 2 个；每个槽位独占 1 个 Command Pool 与 1 个 `eOneTimeSubmit` Primary Command Buffer |
+| 帧内命令提交 | 1 次 Graphics Queue Submit；依次提交 Shadow、Forward 两个 Command Buffer |
 | FPS 默认状态 | 启用 |
 | FPS 采样周期 | 1 秒，非重叠窗口 |
 | FPS 显示 | 坐标 `(10, 10)`；基础字号 `40.0`；透明背景；零边框 |

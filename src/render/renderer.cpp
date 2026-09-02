@@ -15,14 +15,14 @@ auto Renderer::submit(const Device& device, uint32_t image_id) -> void {
         vk::PipelineStageFlagBits::eColorAttachmentOutput |
         vk::PipelineStageFlagBits::eEarlyFragmentTests |
         vk::PipelineStageFlagBits::eLateFragmentTests;
-    const auto command_buffer = *frame.command_buffer;
+    const auto command_buffers = frame.command_buffers();
     const auto signal_semaphore = *swapchain_.render_finished(image_id);
 
     vk::SubmitInfo submit_info{};
     submit_info
         .setWaitSemaphores(wait_semaphore)
         .setWaitDstStageMask(wait_stage)
-        .setCommandBuffers(command_buffer)
+        .setCommandBuffers(command_buffers)
         .setSignalSemaphores(signal_semaphore);
 
     frames_in_flight_.reset(device);

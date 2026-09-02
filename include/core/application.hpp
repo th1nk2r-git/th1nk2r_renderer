@@ -6,6 +6,7 @@
 
 #include "core/frame_rate_counter.hpp"
 #include "core/input/input_system.hpp"
+#include "core/thread_pool.hpp"
 #include "gfx/device/device_context.hpp"
 #include "platform/window.hpp"
 #include "render/pass/forward/forward_pass.hpp"
@@ -40,6 +41,7 @@ private:
     FrameRateCounter frame_rate_counter_;
     InputSystem input_system_;
     ImGuiLayer imgui_layer_;
+    ThreadPool<8> thread_pool_;
 
     // load the models
     auto load_models(const std::filesystem::path& root) -> std::vector<ResourceId<Material>>;

@@ -2,6 +2,7 @@
 #define RENDERER_HPP
 
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -9,7 +10,15 @@
 #include "gfx/frame/swapchain.hpp"
 
 struct RenderFrameContext {
-    vk::raii::CommandBuffer& command_buffer;
+    template <typename Function>
+    auto record(std::size_t slot_index, Function&& execute) const -> void {
+        command_resources.record(
+            slot_index,
+            std::forward<Function>(execute)
+        );
+    }
+
+    Frame& command_resources;
     const vk::raii::RenderPass& render_pass;
     const vk::raii::Framebuffer& framebuffer;
     vk::Extent2D extent;
@@ -76,16 +85,14 @@ private:
     template <typename Recorder> requires std::invocable<Recorder&&, const RenderFrameContext&>
     auto record(uint32_t image_id, Recorder&& recorder) -> void {
         auto& frame = frames_in_flight_.current_frame();
-        frame.record([&](vk::raii::CommandBuffer& command_buffer) {
-            const RenderFrameContext context{
-                .command_buffer = command_buffer,
-                .render_pass = swapchain_.render_pass(),
-                .framebuffer = swapchain_.framebuffers().at(image_id),
-                .extent = swapchain_.extent(),
-                .frame_index = frames_in_flight_.current_frame_index()
-            };
-            std::forward<Recorder>(recorder)(context);
-        });
+        const RenderFrameContext context{
+            .command_resources = frame,
+            .render_pass = swapchain_.render_pass(),
+            .framebuffer = swapchain_.framebuffers().at(image_id),
+            .extent = swapchain_.extent(),
+            .frame_index = frames_in_flight_.current_frame_index()
+        };
+        std::forward<Recorder>(recorder)(context);
     }
 
     auto submit(const Device& device, uint32_t image_id) -> void;

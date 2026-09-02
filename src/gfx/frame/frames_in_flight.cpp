@@ -39,17 +39,31 @@ namespace {
     }
 }
 
-Frame::Frame(const Device& device)
+CommandRecordingSlot::CommandRecordingSlot(const Device& device)
     : command_pool(create_command_pool(device)),
-      command_buffer(create_command_buffer(device, command_pool)),
-      image_available(
+      command_buffer(create_command_buffer(device, command_pool)) {}
+
+Frame::Frame(const Device& device)
+    : image_available(
           device.logical_device().createSemaphore(vk::SemaphoreCreateInfo{})
       ),
       in_flight_fence(
           device.logical_device().createFence(vk::FenceCreateInfo{
               .flags = vk::FenceCreateFlagBits::eSignaled
           })
-      ) {}
+      ),
+      recording_slots_{
+          CommandRecordingSlot{device},
+          CommandRecordingSlot{device}
+      } {}
+
+auto Frame::command_buffers() const noexcept
+    -> std::array<vk::CommandBuffer, recording_slot_count> {
+    return {
+        *recording_slots_[0].command_buffer,
+        *recording_slots_[1].command_buffer
+    };
+}
 
 FramesInFlight::FramesInFlight(const Device& device)
     : frames_(create_frames(device, max_frames_in_flight_)) {}

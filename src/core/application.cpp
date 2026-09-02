@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -19,6 +20,9 @@
 #include "resource/gpu/model.hpp"
 
 namespace {
+    constexpr std::size_t shadow_recording_slot = 0;
+    constexpr std::size_t forward_recording_slot = 1;
+
     auto make_model_name(
         const std::filesystem::path& root,
         const std::filesystem::path& model_path
@@ -247,35 +251,65 @@ auto Application::loop() -> void {
             renderer_.render(
                 device_context_.device(),
                 [this](const RenderFrameContext& frame) {
-                    const auto shadow_output = shadow_pass_.record(
-                        ShadowPass::ExecutionContext{
-                            .command_buffer = frame.command_buffer,
-                            .frame_index = frame.frame_index
-                        },
-                        ShadowPass::Input{
-                            .scene = scene_,
-                            .registry = registry_
-                        }
+                    const auto shadow_output = shadow_pass_.prepare(
+                        frame.frame_index,
+                        scene_
                     );
-                    forward_pass_.record(
-                        ForwardPass::ExecutionContext{
-                            .command_buffer = frame.command_buffer,
-                            .frame_index = frame.frame_index
-                        },
-                        ForwardPass::Input{
-                            .scene = scene_,
-                            .registry = registry_,
-                            .shadow = shadow_output
-                        },
-                        ForwardPass::Output{
-                            .render_pass = frame.render_pass,
-                            .framebuffer = frame.framebuffer,
-                            .extent = frame.extent
-                        },
-                        [this](vk::raii::CommandBuffer& command_buffer) {
-                            imgui_layer_.record(command_buffer);
-                        }
-                    );
+
+                    auto shadow_future = thread_pool_.run([this, &frame, &shadow_output] {
+                        frame.record(
+                            shadow_recording_slot,
+                            [this, &frame, &shadow_output](
+                                vk::raii::CommandBuffer& command_buffer
+                            ) {
+                                shadow_pass_.record(
+                                    ShadowPass::ExecutionContext{
+                                        .command_buffer = command_buffer,
+                                        .frame_index = frame.frame_index
+                                    },
+                                    ShadowPass::Input{
+                                        .scene = scene_,
+                                        .registry = registry_
+                                    },
+                                    shadow_output
+                                );
+                            }
+                        );
+                    });
+
+                    auto forward_future = thread_pool_.run([this, &frame, &shadow_output] {
+                        frame.record(
+                            forward_recording_slot,
+                            [this, &frame, &shadow_output](
+                                vk::raii::CommandBuffer& command_buffer
+                            ) {
+                                forward_pass_.record(
+                                    ForwardPass::ExecutionContext{
+                                        .command_buffer = command_buffer,
+                                        .frame_index = frame.frame_index
+                                    },
+                                    ForwardPass::Input{
+                                        .scene = scene_,
+                                        .registry = registry_,
+                                        .shadow = shadow_output
+                                    },
+                                    ForwardPass::Output{
+                                        .render_pass = frame.render_pass,
+                                        .framebuffer = frame.framebuffer,
+                                        .extent = frame.extent
+                                    },
+                                    [this](vk::raii::CommandBuffer& command_buffer) {
+                                        imgui_layer_.record(command_buffer);
+                                    }
+                                );
+                            }
+                        );
+                    });
+
+                    shadow_future.wait();
+                    forward_future.wait();
+                    shadow_future.get();
+                    forward_future.get();
                 }
             );
 

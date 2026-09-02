@@ -100,8 +100,7 @@ namespace {
             vk::FormatFeatureFlagBits::eDepthStencilAttachment |
             vk::FormatFeatureFlagBits::eSampledImage;
         for (const auto format : candidates) {
-            const auto properties =
-                device.physical_device().getFormatProperties(format);
+            const auto properties = device.physical_device().getFormatProperties(format);
             if ((properties.optimalTilingFeatures & required) == required) {
                 return format;
             }
@@ -820,13 +819,12 @@ auto ShadowPass::write_material(
     }
 }
 
-auto ShadowPass::record(
-    ExecutionContext context,
-    Input input
+auto ShadowPass::prepare(
+    uint32_t frame_index,
+    const Scene& scene
 ) -> Output {
-    auto& frame = *frame_resources_.at(context.frame_index);
-    auto& bindings = light_bindings_.at(context.frame_index);
-    const auto& lights = input.scene.point_lights();
+    auto& bindings = light_bindings_.at(frame_index);
+    const auto& lights = scene.point_lights();
     bindings.assign(lights.size(), PointLightShadowBinding{});
 
     std::vector<GpuShadowFace> faces(
@@ -834,9 +832,7 @@ auto ShadowPass::record(
         GpuShadowFace{}
     );
     uint32_t shadow_light_count = 0;
-    for (std::size_t light_index = 0;
-        light_index < lights.size();
-        ++light_index) {
+    for (std::size_t light_index = 0; light_index < lights.size(); ++light_index) {
         const auto& light = lights[light_index];
         if (!light.casts_shadow ||
             shadow_light_count >= config_.max_shadow_light_count) {
@@ -874,8 +870,22 @@ auto ShadowPass::record(
     face_buffer_.write(
         faces.data(),
         face_data_size(config_),
-        face_frame_stride_ * context.frame_index
+        face_frame_stride_ * frame_index
     );
+
+    return Output{
+        .descriptor_set = *output_descriptor_sets_.at(frame_index),
+        .light_bindings = bindings,
+        .shadow_light_count = shadow_light_count
+    };
+}
+
+auto ShadowPass::record(
+    ExecutionContext context,
+    Input input,
+    const Output& output
+) -> void {
+    auto& frame = *frame_resources_.at(context.frame_index);
 
     auto& command_buffer = context.command_buffer;
     transition_shadow_image(
@@ -905,7 +915,7 @@ auto ShadowPass::record(
     };
 
     for (uint32_t shadow_index = 0;
-        shadow_index < shadow_light_count;
+        shadow_index < output.shadow_light_count;
         ++shadow_index) {
         for (uint32_t face = 0; face < cube_face_count; ++face) {
             const auto face_index =
@@ -980,10 +990,4 @@ auto ShadowPass::record(
         false
     );
     frame.initialized = true;
-
-    return Output{
-        .descriptor_set = *output_descriptor_sets_.at(context.frame_index),
-        .light_bindings = bindings,
-        .shadow_light_count = shadow_light_count
-    };
 }
