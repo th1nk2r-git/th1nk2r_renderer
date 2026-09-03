@@ -4,6 +4,10 @@
 
 渲染器将平台窗口、设备上下文、帧调度、资源系统、场景表达与渲染 Pass 分层组织，以清晰的所有权边界管理 GPU 资源。当前渲染路径支持 Metallic-Roughness PBR、基于计算着色器的 IBL 预计算、点光源 PCSS 全向软阴影、Mesh 级视锥剔除与天空盒渲染；帧内由八工作线程池调度阴影与前向两项主命令缓冲录制任务，并使用 Sponza 作为默认示例场景。
 
+## 效果展示
+
+![Sponza 场景实时渲染效果](docs/images/sponza-render-preview.png)
+
 ## 核心能力
 
 ### 渲染
