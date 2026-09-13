@@ -2,9 +2,8 @@
 #define MATERIAL_DATA_HPP
 
 #include <array>
+#include <cstddef>
 #include <optional>
-
-#include "resource/cpu/image.hpp"
 
 struct MaterialData {
     std::array<float, 4> base_color_{
@@ -19,11 +18,11 @@ struct MaterialData {
     bool alpha_mask_ = false;
     float alpha_cutoff_ = 0.5F;
 
-    std::optional<ImageData> base_color_texture_;
-    std::optional<ImageData> metallic_roughness_texture_;
-    std::optional<ImageData> normal_texture_;
-    std::optional<ImageData> occlusion_texture_;
-    std::optional<ImageData> emissive_texture_;
+    std::optional<std::size_t> base_color_texture_;
+    std::optional<std::size_t> metallic_roughness_texture_;
+    std::optional<std::size_t> normal_texture_;
+    std::optional<std::size_t> occlusion_texture_;
+    std::optional<std::size_t> emissive_texture_;
 };
 
 #endif

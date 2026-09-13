@@ -2,40 +2,46 @@
 #define MATERIAL_HPP
 
 #include <array>
-#include <memory>
 
-#include "gfx/device/device.hpp"
-#include "gfx/device/memory_allocator.hpp"
 #include "resource/cpu/material.hpp"
-#include "resource/gpu/texture.hpp"
+#include "resource/gpu/resource_id.hpp"
+
+class Texture;
+
+struct MaterialTextures {
+    ResourceId<Texture> base_color;
+    ResourceId<Texture> metallic_roughness;
+    ResourceId<Texture> normal;
+    ResourceId<Texture> occlusion;
+    ResourceId<Texture> emissive;
+};
 
 class Material {
 public:
     Material(
         const MaterialData& data,
-        const Device& device,
-        const MemoryAllocator& allocator,
-        ImageUploader& uploader
+        MaterialTextures textures
     );
 
-    auto base_color_texture() const noexcept -> const Texture& {
-        return *base_color_texture_;
+    auto base_color_texture_id() const noexcept -> ResourceId<Texture> {
+        return textures_.base_color;
     }
 
-    auto metallic_roughness_texture() const noexcept -> const Texture& {
-        return *metallic_roughness_texture_;
+    auto metallic_roughness_texture_id() const noexcept
+        -> ResourceId<Texture> {
+        return textures_.metallic_roughness;
     }
 
-    auto normal_texture() const noexcept -> const Texture& {
-        return *normal_texture_;
+    auto normal_texture_id() const noexcept -> ResourceId<Texture> {
+        return textures_.normal;
     }
 
-    auto occlusion_texture() const noexcept -> const Texture& {
-        return *occlusion_texture_;
+    auto occlusion_texture_id() const noexcept -> ResourceId<Texture> {
+        return textures_.occlusion;
     }
 
-    auto emissive_texture() const noexcept -> const Texture& {
-        return *emissive_texture_;
+    auto emissive_texture_id() const noexcept -> ResourceId<Texture> {
+        return textures_.emissive;
     }
 
     auto base_color_factor() const noexcept
@@ -72,11 +78,7 @@ public:
     }
 
 private:
-    std::unique_ptr<Texture> base_color_texture_;
-    std::unique_ptr<Texture> metallic_roughness_texture_;
-    std::unique_ptr<Texture> normal_texture_;
-    std::unique_ptr<Texture> occlusion_texture_;
-    std::unique_ptr<Texture> emissive_texture_;
+    MaterialTextures textures_;
     std::array<float, 4> base_color_factor_{};
     float metallic_ = 0.0F;
     float roughness_ = 1.0F;

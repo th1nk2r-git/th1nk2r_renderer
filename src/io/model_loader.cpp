@@ -19,6 +19,8 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <utility>
 
 #include "io/image_loader.hpp"
 
@@ -272,12 +274,37 @@ namespace {
         return result;
     }
 
+    template <typename Loader>
+    auto load_cached_texture(
+        std::string source,
+        std::vector<TextureData>& textures,
+        std::unordered_map<std::string, std::size_t>& texture_indices,
+        Loader&& load
+    ) -> std::size_t {
+        if (const auto iterator = texture_indices.find(source);
+            iterator != texture_indices.end()) {
+            return iterator->second;
+        }
+
+        const auto index = textures.size();
+        textures.push_back(
+            TextureData{
+                .source_ = source,
+                .image_ = std::forward<Loader>(load)()
+            }
+        );
+        texture_indices.emplace(std::move(source), index);
+        return index;
+    }
+
     auto load_material_texture(
         const aiMaterial& source,
         const aiScene& scene,
         const std::filesystem::path& model_path,
-        std::span<const aiTextureType> texture_types
-    ) -> std::optional<ImageData> {
+        std::span<const aiTextureType> texture_types,
+        std::vector<TextureData>& textures,
+        std::unordered_map<std::string, std::size_t>& texture_indices
+    ) -> std::optional<std::size_t> {
         aiString texture_path;
         bool found = false;
         for (const auto texture_type : texture_types) {
@@ -296,20 +323,43 @@ namespace {
 
         if (const auto* embedded =
                 scene.GetEmbeddedTexture(texture_path.C_Str())) {
-            return convert_embedded_texture(*embedded);
+            const auto model_source = std::filesystem::absolute(model_path)
+                .lexically_normal()
+                .generic_string();
+            auto source_key = model_source + "#embedded:" +
+                texture_path.C_Str();
+            return load_cached_texture(
+                std::move(source_key),
+                textures,
+                texture_indices,
+                [embedded] {
+                    return convert_embedded_texture(*embedded);
+                }
+            );
         }
 
         auto resolved_path = std::filesystem::path{texture_path.C_Str()};
         if (resolved_path.is_relative()) {
             resolved_path = model_path.parent_path() / resolved_path;
         }
-        return load_image_rgba8(resolved_path.lexically_normal());
+        resolved_path = std::filesystem::absolute(resolved_path)
+            .lexically_normal();
+        return load_cached_texture(
+            resolved_path.generic_string(),
+            textures,
+            texture_indices,
+            [&resolved_path] {
+                return load_image_rgba8(resolved_path);
+            }
+        );
     }
 
     auto convert_material(
         const aiMaterial& source,
         const aiScene& scene,
-        const std::filesystem::path& model_path
+        const std::filesystem::path& model_path,
+        std::vector<TextureData>& textures,
+        std::unordered_map<std::string, std::size_t>& texture_indices
     ) -> MaterialData {
         aiColor4D base_color{1.0F, 1.0F, 1.0F, 1.0F};
         if (source.Get(AI_MATKEY_BASE_COLOR, base_color) != AI_SUCCESS) {
@@ -364,31 +414,41 @@ namespace {
                 source,
                 scene,
                 model_path,
-                base_color_texture_types
+                base_color_texture_types,
+                textures,
+                texture_indices
             ),
             .metallic_roughness_texture_ = load_material_texture(
                 source,
                 scene,
                 model_path,
-                metallic_roughness_texture_types
+                metallic_roughness_texture_types,
+                textures,
+                texture_indices
             ),
             .normal_texture_ = load_material_texture(
                 source,
                 scene,
                 model_path,
-                normal_texture_types
+                normal_texture_types,
+                textures,
+                texture_indices
             ),
             .occlusion_texture_ = load_material_texture(
                 source,
                 scene,
                 model_path,
-                occlusion_texture_types
+                occlusion_texture_types,
+                textures,
+                texture_indices
             ),
             .emissive_texture_ = load_material_texture(
                 source,
                 scene,
                 model_path,
-                emissive_texture_types
+                emissive_texture_types,
+                textures,
+                texture_indices
             )
         };
     }
@@ -430,6 +490,7 @@ auto load_model(const std::filesystem::path& path) -> ModelData {
     }
 
     ModelData result{};
+    std::unordered_map<std::string, std::size_t> texture_indices;
     if (scene->mNumMaterials == 0 || scene->mMaterials == nullptr) {
         result.material_.emplace_back();
     }
@@ -444,7 +505,13 @@ auto load_model(const std::filesystem::path& path) -> ModelData {
                 );
             }
             result.material_.push_back(
-                convert_material(*source, *scene, path)
+                convert_material(
+                    *source,
+                    *scene,
+                    path,
+                    result.textures_,
+                    texture_indices
+                )
             );
         }
     }

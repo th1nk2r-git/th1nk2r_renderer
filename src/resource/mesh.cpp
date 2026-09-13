@@ -77,11 +77,9 @@ namespace {
 
 Mesh::Mesh(
     const MeshData& data,
-    ResourceId<Material> material,
     const MemoryAllocator& allocator,
     BufferUploader& uploader
 ) : index_count_(checked_index_count(data)),
-      material_(material),
       bounds_(calculate_bounds(data)),
       vertex_buffer_(
           allocator,

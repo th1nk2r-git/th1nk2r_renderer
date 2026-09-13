@@ -9,6 +9,7 @@
 
 #include "resource/gpu/material.hpp"
 #include "resource/gpu/texture.hpp"
+#include "resource/registry/resource_registry.hpp"
 
 namespace {
     constexpr uint32_t texture_count = 5;
@@ -157,7 +158,8 @@ MaterialWriter::MaterialWriter(
 
 auto MaterialWriter::write(
     ResourceId<Material> id,
-    const Material& material
+    const Material& material,
+    const ResourceRegistry& registry
 ) -> void {
     if (!id.valid()) {
         throw std::invalid_argument("material resource id is invalid");
@@ -222,11 +224,11 @@ auto MaterialWriter::write(
 
     const vk::DescriptorImageInfo sampler_info{.sampler = *sampler};
     const std::array texture_infos{
-        texture_info(material.base_color_texture()),
-        texture_info(material.metallic_roughness_texture()),
-        texture_info(material.normal_texture()),
-        texture_info(material.occlusion_texture()),
-        texture_info(material.emissive_texture())
+        texture_info(registry.query(material.base_color_texture_id())),
+        texture_info(registry.query(material.metallic_roughness_texture_id())),
+        texture_info(registry.query(material.normal_texture_id())),
+        texture_info(registry.query(material.occlusion_texture_id())),
+        texture_info(registry.query(material.emissive_texture_id()))
     };
     const vk::DescriptorBufferInfo parameter_info{
         .buffer = parameter_buffer_.get(),

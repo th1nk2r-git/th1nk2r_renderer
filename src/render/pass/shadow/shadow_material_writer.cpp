@@ -9,6 +9,7 @@
 
 #include "resource/gpu/material.hpp"
 #include "resource/gpu/texture.hpp"
+#include "resource/registry/resource_registry.hpp"
 
 namespace {
     struct alignas(16) GpuShadowMaterialParameters {
@@ -160,7 +161,8 @@ ShadowMaterialWriter::ShadowMaterialWriter(
 
 auto ShadowMaterialWriter::write(
     ResourceId<Material> id,
-    const Material& material
+    const Material& material,
+    const ResourceRegistry& registry
 ) -> void {
     if (!id.valid()) {
         throw std::invalid_argument(
@@ -206,7 +208,9 @@ auto ShadowMaterialWriter::write(
 
     const vk::DescriptorImageInfo sampler_info{.sampler = *sampler};
     const vk::DescriptorImageInfo texture_info{
-        .imageView = *material.base_color_texture().image_view(),
+        .imageView = *registry.query(
+            material.base_color_texture_id()
+        ).image_view(),
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
     };
     const vk::DescriptorBufferInfo parameter_info{

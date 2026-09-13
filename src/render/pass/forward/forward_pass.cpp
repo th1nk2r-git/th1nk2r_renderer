@@ -18,7 +18,10 @@
 #include "io/spirv_loader.hpp"
 #include "resource/cpu/mesh.hpp"
 #include "resource/gpu/mesh.hpp"
+#include "resource/gpu/model.hpp"
 #include "resource/registry/resource_registry.hpp"
+#include "scene/components/mesh_renderer.hpp"
+#include "scene/components/transform.hpp"
 
 namespace {
     struct alignas(16) DrawConstants {
@@ -426,7 +429,8 @@ auto ForwardPass::write_material(
     for (const auto material_id : material_ids) {
         material_writer_.write(
             material_id,
-            registry.query(material_id)
+            registry.query(material_id),
+            registry
         );
     }
 }
@@ -441,8 +445,7 @@ auto ForwardPass::write_environment(
 auto ForwardPass::record(
     ExecutionContext context,
     Input input,
-    Output output,
-    const OverlayRecorder& overlay_recorder
+    Output output
 ) -> void {
     const auto aspect_ratio = static_cast<float>(output.extent.width) / static_cast<float>(output.extent.height);
     const auto view_matrix = input.scene.camera().view_matrix();
@@ -547,10 +550,17 @@ auto ForwardPass::record(
     );
 
     for (const auto& entity : input.scene.entities()) {
-        const auto model_matrix = entity.model_matrix();
-        const auto& model = input.registry.query(entity.model_id());
+        const auto* transform = entity.get_component<Transform>();
+        const auto* mesh_renderer = entity.get_component<MeshRenderer>();
+        if (transform == nullptr || mesh_renderer == nullptr) {
+            continue;
+        }
+
+        const auto model_matrix = transform->model_matrix();
         bool draw_constants_written = false;
-        for (const auto& mesh : model.meshes()) {
+        const auto& model = input.registry.query(mesh_renderer->model_id());
+        for (const auto& primitive : model.primitives()) {
+            const auto& mesh = input.registry.query(primitive.mesh);
             if (!intersects(frustum, mesh.bounds(), model_matrix)) {
                 continue;
             }
@@ -587,7 +597,7 @@ auto ForwardPass::record(
             }
 
             const std::array material_descriptor_sets{
-                *material_writer_.descriptor_set(mesh.material())
+                *material_writer_.descriptor_set(primitive.material)
             };
             command_buffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics,
@@ -607,10 +617,6 @@ auto ForwardPass::record(
         *skybox_pipeline_
     );
     command_buffer.draw(36, 1, 0, 0);
-
-    if (overlay_recorder) {
-        overlay_recorder(command_buffer);
-    }
 
     command_buffer.endRenderPass();
 }

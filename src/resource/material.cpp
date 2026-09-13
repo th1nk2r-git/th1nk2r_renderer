@@ -3,20 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstddef>
-#include <memory>
 #include <stdexcept>
-#include <string>
-#include <string_view>
 
 namespace {
-    constexpr std::array white_texel{
-        std::byte{255}, std::byte{255}, std::byte{255}, std::byte{255}
-    };
-    constexpr std::array flat_normal_texel{
-        std::byte{128}, std::byte{128}, std::byte{255}, std::byte{255}
-    };
-
     auto finite_or(float value, float fallback) noexcept -> float {
         return std::isfinite(value) ? value : fallback;
     }
@@ -46,106 +35,24 @@ namespace {
         };
     }
 
-    auto create_texture_or_fallback(
-        const std::optional<ImageData>& image_data,
-        const Device& device,
-        const MemoryAllocator& allocator,
-        ImageUploader& uploader,
-        vk::Format format,
-        std::string_view role,
-        const std::array<std::byte, 4>& fallback_texel
-    ) -> std::unique_ptr<Texture> {
-        if (image_data) {
-            const auto& image = *image_data;
-            if (image.channels != 4) {
-                throw std::invalid_argument(
-                    "material " + std::string{role} +
-                    " texture must contain RGBA8 pixels"
-                );
-            }
-            return std::make_unique<Texture>(
-                device,
-                allocator,
-                uploader,
-                image.width,
-                image.height,
-                image.pixels,
-                format
+    auto checked_textures(MaterialTextures textures) -> MaterialTextures {
+        if (!textures.base_color.valid() ||
+            !textures.metallic_roughness.valid() ||
+            !textures.normal.valid() ||
+            !textures.occlusion.valid() ||
+            !textures.emissive.valid()) {
+            throw std::invalid_argument(
+                "material requires valid texture resource ids"
             );
         }
-
-        return std::make_unique<Texture>(
-            device,
-            allocator,
-            uploader,
-            1,
-            1,
-            fallback_texel,
-            format
-        );
+        return textures;
     }
 }
 
 Material::Material(
     const MaterialData& data,
-    const Device& device,
-    const MemoryAllocator& allocator,
-    ImageUploader& uploader
-) : base_color_texture_(
-        create_texture_or_fallback(
-            data.base_color_texture_,
-            device,
-            allocator,
-            uploader,
-            vk::Format::eR8G8B8A8Srgb,
-            "base color",
-            white_texel
-        )
-    ),
-    metallic_roughness_texture_(
-        create_texture_or_fallback(
-            data.metallic_roughness_texture_,
-            device,
-            allocator,
-            uploader,
-            vk::Format::eR8G8B8A8Unorm,
-            "metallic-roughness",
-            white_texel
-        )
-    ),
-    normal_texture_(
-        create_texture_or_fallback(
-            data.normal_texture_,
-            device,
-            allocator,
-            uploader,
-            vk::Format::eR8G8B8A8Unorm,
-            "normal",
-            flat_normal_texel
-        )
-    ),
-    occlusion_texture_(
-        create_texture_or_fallback(
-            data.occlusion_texture_,
-            device,
-            allocator,
-            uploader,
-            vk::Format::eR8G8B8A8Unorm,
-            "occlusion",
-            white_texel
-        )
-    ),
-    emissive_texture_(
-        create_texture_or_fallback(
-            data.emissive_texture_,
-            device,
-            allocator,
-            uploader,
-            vk::Format::eR8G8B8A8Srgb,
-            "emissive",
-            white_texel
-        )
-    ),
+    MaterialTextures textures
+) : textures_(checked_textures(textures)),
     base_color_factor_(unit_color(data.base_color_)),
     metallic_(unit_value(data.metallic_, 0.0F)),
     roughness_(unit_value(data.roughness_, 1.0F)),

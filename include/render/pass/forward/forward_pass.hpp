@@ -2,7 +2,6 @@
 #define FORWARD_PASS_HPP
 
 #include <cstdint>
-#include <functional>
 #include <span>
 #include <vector>
 
@@ -19,9 +18,6 @@ class Scene;
 
 class ForwardPass {
 public:
-    using OverlayRecorder =
-        std::function<void(vk::raii::CommandBuffer& command_buffer)>;
-
     struct ExecutionContext {
         vk::raii::CommandBuffer& command_buffer;
         uint32_t frame_index = 0;
@@ -65,8 +61,7 @@ public:
     auto record(
         ExecutionContext context,
         Input input,
-        Output output,
-        const OverlayRecorder& overlay_recorder = {}
+        Output output
     ) -> void;
 
     auto recreate_pipeline(

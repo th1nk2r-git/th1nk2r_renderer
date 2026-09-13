@@ -4,8 +4,17 @@
 #include <stdexcept>
 #include <utility>
 
+auto ResourceRegistry::add(std::unique_ptr<Texture> texture)
+    -> ResourceId<Texture> {
+    return textures_.add(std::move(texture));
+}
+
 auto ResourceRegistry::add(std::unique_ptr<Material> material) -> ResourceId<Material> {
     return materials_.add(std::move(material));
+}
+
+auto ResourceRegistry::add(std::unique_ptr<Mesh> mesh) -> ResourceId<Mesh> {
+    return meshes_.add(std::move(mesh));
 }
 
 auto ResourceRegistry::add(std::unique_ptr<Model> model) -> ResourceId<Model> {
@@ -42,8 +51,16 @@ auto ResourceRegistry::set_model_name(ResourceId<Model> id, std::string name) ->
     }
 }
 
+auto ResourceRegistry::query(ResourceId<Texture> id) const -> const Texture& {
+    return textures_.query(id);
+}
+
 auto ResourceRegistry::query(ResourceId<Material> id) const -> const Material& {
     return materials_.query(id);
+}
+
+auto ResourceRegistry::query(ResourceId<Mesh> id) const -> const Mesh& {
+    return meshes_.query(id);
 }
 
 auto ResourceRegistry::query(ResourceId<Model> id) const -> const Model& {

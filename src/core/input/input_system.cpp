@@ -1,14 +1,7 @@
 #include "core/input/input_system.hpp"
 
-#include <utility>
-
-InputSystem::InputSystem(
-    Window& window,
-    Camera& camera,
-    GeneralController::Callbacks general_callbacks
-)
+InputSystem::InputSystem(Window& window, Camera& camera)
     : window_(window),
-      general_controller_(std::move(general_callbacks)),
       camera_controller_(camera) {
     window_.set_key_callback(
         [this](int key, int action) {
@@ -29,10 +22,6 @@ InputSystem::~InputSystem() noexcept {
 }
 
 auto InputSystem::route_key(int key, int action) -> void {
-    if (general_controller_.handle_key(key, action)) {
-        return;
-    }
-
     const auto active = action != GLFW_RELEASE;
 
     switch (key) {

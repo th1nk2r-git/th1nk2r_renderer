@@ -8,8 +8,6 @@
 #include "scene/camera.hpp"
 #include "scene/entity.hpp"
 #include "scene/light.hpp"
-#include "resource/gpu/resource_id.hpp"
-
 
 class Scene {
 public:
@@ -50,10 +48,7 @@ public:
         return entities_.size();
     }
 
-    auto create_entity(
-        ResourceId<Model> model,
-        Transform transform
-    ) -> Entity&;
+    auto create_entity() -> Entity&;
     auto clear_entities() noexcept -> void;
 
 private:

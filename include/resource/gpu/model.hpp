@@ -5,12 +5,12 @@
 #include <span>
 #include <vector>
 
-#include "resource/gpu/mesh.hpp"
+#include "resource/gpu/primitive.hpp"
 
 class Model {
 public:
     Model() = delete;
-    explicit Model(std::vector<Mesh> meshes);
+    explicit Model(std::vector<Primitive> primitives);
     ~Model() = default;
 
     Model(const Model&) = delete;
@@ -18,12 +18,12 @@ public:
     Model(Model&&) noexcept = default;
     auto operator=(Model&&) noexcept -> Model& = default;
 
-    auto meshes() const noexcept -> std::span<const Mesh> {
-        return std::span<const Mesh>{meshes_};
+    auto primitives() const noexcept -> std::span<const Primitive> {
+        return primitives_;
     }
 
 private:
-    std::vector<Mesh> meshes_;
+    std::vector<Primitive> primitives_;
 };
 
 #endif

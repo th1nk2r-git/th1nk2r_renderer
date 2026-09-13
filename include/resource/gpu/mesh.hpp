@@ -5,11 +5,8 @@
 #include "gfx/device/buffer_uploader.hpp"
 #include "gfx/resource/buffer.hpp"
 #include "resource/cpu/mesh.hpp"
-#include "resource/gpu/resource_id.hpp"
 #include <cstdint>
 #include <glm/vec3.hpp>
-
-class Material;
 
 class Mesh {
 public:
@@ -20,7 +17,6 @@ public:
 
     Mesh(
         const MeshData& data,
-        ResourceId<Material> material,
         const MemoryAllocator& allocator,
         BufferUploader& uploader
     );
@@ -34,20 +30,12 @@ public:
     auto index_count() const noexcept -> uint32_t {
         return index_count_;
     }
-    auto material() const noexcept -> ResourceId<Material> {
-        return material_;
-    }
     auto bounds() const noexcept -> const Bounds& {
         return bounds_;
     }
 
-    auto set_material(ResourceId<Material> new_material) noexcept -> void {
-        material_ = new_material;
-    }
-
 private:
     uint32_t index_count_ = 0;
-    ResourceId<Material> material_;
     Bounds bounds_;
     Buffer vertex_buffer_;
     Buffer index_buffer_;

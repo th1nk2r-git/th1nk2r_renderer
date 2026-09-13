@@ -10,6 +10,7 @@
 #include "resource/gpu/resource_id.hpp"
 
 class Material;
+class ResourceRegistry;
 
 class MaterialWriter {
 public:
@@ -25,7 +26,11 @@ public:
     MaterialWriter(MaterialWriter&&) = delete;
     auto operator=(MaterialWriter&&) -> MaterialWriter& = delete;
 
-    auto write(ResourceId<Material> id, const Material& material) -> void;
+    auto write(
+        ResourceId<Material> id,
+        const Material& material,
+        const ResourceRegistry& registry
+    ) -> void;
 
     auto descriptor_set(ResourceId<Material> id) const
         -> const vk::raii::DescriptorSet& {

@@ -1,42 +1,90 @@
 #ifndef ENTITY_HPP
 #define ENTITY_HPP
 
-#include "resource/gpu/resource_id.hpp"
-#include "scene/transform.hpp"
+#include <algorithm>
+#include <concepts>
+#include <cstddef>
+#include <memory>
+#include <stdexcept>
+#include <utility>
+#include <vector>
 
-#include <glm/mat4x4.hpp>
-
-class Model;
+#include "scene/component.hpp"
 
 class Entity {
 public:
-    Entity() = delete;
-    Entity(ResourceId<Model> model, Transform transform);
+    Entity() = default;
+    ~Entity() = default;
 
     Entity(const Entity&) = delete;
     auto operator=(const Entity&) -> Entity& = delete;
     Entity(Entity&&) noexcept = default;
-    auto operator=(Entity&&) noexcept -> Entity& = delete;
+    auto operator=(Entity&&) noexcept -> Entity& = default;
 
-    auto model_id() const noexcept -> ResourceId<Model> {
-        return model_id_;
+    template <typename T, typename... Args> requires std::derived_from<T, Component>
+    auto add_component(Args&&... args) -> T& {
+        if (has_component<T>()) {
+            throw std::logic_error(
+                "entity already contains the requested component type"
+            );
+        }
+
+        auto component = std::make_unique<T>(
+            std::forward<Args>(args)...
+        );
+        auto& result = *component;
+        components_.push_back(std::move(component));
+        return result;
     }
 
-    auto transform() noexcept -> Transform& {
-        return transform_;
+    template <typename T> requires std::derived_from<T, Component>
+    auto get_component() noexcept -> T* {
+        for (const auto& component : components_) {
+            if (auto* result = dynamic_cast<T*>(component.get())) {
+                return result;
+            }
+        }
+        return nullptr;
     }
 
-    auto transform() const noexcept -> const Transform& {
-        return transform_;
+    template <typename T> requires std::derived_from<T, Component>
+    auto get_component() const noexcept -> const T* {
+        for (const auto& component : components_) {
+            if (const auto* result = dynamic_cast<const T*>(component.get())) {
+                return result;
+            }
+        }
+        return nullptr;
     }
 
-    auto set_transform(Transform transform) noexcept -> void;
+    template <typename T> requires std::derived_from<T, Component>
+    auto has_component() const noexcept -> bool {
+        return get_component<T>() != nullptr;
+    }
 
-    auto model_matrix() const noexcept -> glm::mat4;
+    template <typename T> requires std::derived_from<T, Component>
+    auto remove_component() noexcept -> bool {
+        const auto iterator = std::find_if(
+            components_.begin(),
+            components_.end(),
+            [](const auto& component) {
+                return dynamic_cast<T*>(component.get()) != nullptr;
+            }
+        );
+        if (iterator == components_.end()) {
+            return false;
+        }
+
+        components_.erase(iterator);
+        return true;
+    }
+
+    auto component_count() const noexcept -> std::size_t {
+        return components_.size();
+    }
 
 private:
-    ResourceId<Model> model_id_;
-    Transform transform_;
+    std::vector<std::unique_ptr<Component>> components_;
 };
 
 #endif

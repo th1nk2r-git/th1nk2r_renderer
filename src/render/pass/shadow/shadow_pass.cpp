@@ -20,8 +20,11 @@
 #include "io/spirv_loader.hpp"
 #include "render/pass/shadow/shadow_material_writer.hpp"
 #include "resource/cpu/mesh.hpp"
+#include "resource/gpu/mesh.hpp"
 #include "resource/gpu/model.hpp"
 #include "resource/registry/resource_registry.hpp"
+#include "scene/components/mesh_renderer.hpp"
+#include "scene/components/transform.hpp"
 #include "scene/scene.hpp"
 
 namespace {
@@ -814,7 +817,8 @@ auto ShadowPass::write_material(
     for (const auto material_id : material_ids) {
         material_writer_->write(
             material_id,
-            registry.query(material_id)
+            registry.query(material_id),
+            registry
         );
     }
 }
@@ -945,21 +949,33 @@ auto ShadowPass::record(
             );
 
             for (const auto& entity : input.scene.entities()) {
+                const auto* transform =
+                    entity.get_component<Transform>();
+                const auto* mesh_renderer =
+                    entity.get_component<MeshRenderer>();
+                if (transform == nullptr || mesh_renderer == nullptr) {
+                    continue;
+                }
+
                 command_buffer.pushConstants<ShadowDrawConstants>(
                     *pipeline_layout_,
                     vk::ShaderStageFlagBits::eVertex |
                         vk::ShaderStageFlagBits::eFragment,
                     0,
                     ShadowDrawConstants{
-                        .transform = entity.model_matrix(),
+                        .transform = transform->model_matrix(),
                         .face_index = face_index
                     }
                 );
                 const auto& model =
-                    input.registry.query(entity.model_id());
-                for (const auto& mesh : model.meshes()) {
+                    input.registry.query(mesh_renderer->model_id());
+                for (const auto& primitive : model.primitives()) {
+                    const auto& mesh =
+                        input.registry.query(primitive.mesh);
                     const std::array material_descriptor_sets{
-                        *material_writer_->descriptor_set(mesh.material())
+                        *material_writer_->descriptor_set(
+                            primitive.material
+                        )
                     };
                     command_buffer.bindDescriptorSets(
                         vk::PipelineBindPoint::eGraphics,
