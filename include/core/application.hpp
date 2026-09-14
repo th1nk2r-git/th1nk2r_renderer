@@ -2,12 +2,14 @@
 #define APPLICATION_HPP
 
 #include "core/input/input_system.hpp"
+#include "core/thread_pool.hpp"
 #include "core/timer.hpp"
 #include "gfx/device/device_context.hpp"
 #include "platform/window.hpp"
 #include "render/renderer.hpp"
 #include "resource/registry/resource_registry.hpp"
 #include "scene/scene.hpp"
+#include "scene/terrain_generator.hpp"
 
 class Application {
 public:
@@ -23,12 +25,14 @@ public:
 
 private:
     Scene scene_;
+    TerrainGenerator terrain_generator_;
 
     Window window_;
     DeviceContext device_context_;
     ResourceRegistry registry_;
     InputSystem input_system_;
     Timer timer_;
+    ThreadPool<8> thread_pool_;
     Renderer renderer_;
 
     // setup the main scene

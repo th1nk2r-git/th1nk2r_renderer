@@ -11,6 +11,8 @@ class Material;
 class ResourceRegistry;
 class Scene;
 class Window;
+template <int size>
+class ThreadPool;
 struct HdrImageData;
 
 class Renderer {
@@ -20,10 +22,12 @@ public:
         Skipped
     };
 
+    // Referenced dependencies must outlive the renderer.
     Renderer(
         DeviceContext& device_context,
         Window& window,
-        const ResourceRegistry& registry
+        const ResourceRegistry& registry,
+        ThreadPool<8>& thread_pool
     );
     ~Renderer() noexcept;
 

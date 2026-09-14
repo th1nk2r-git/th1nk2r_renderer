@@ -40,7 +40,8 @@ public:
     ModelImporter(ModelImporter&&) = delete;
     auto operator=(ModelImporter&&) -> ModelImporter& = delete;
 
-    // Imports enqueue GPU uploads; the caller submits them before rendering.
+    // Imports store CPU geometry and enqueue texture uploads. After all imports,
+    // call registry.upload_meshes(), then submit uploads before rendering.
     // The default name is the model's immediate parent directory name.
     auto import_model(
         const std::filesystem::path& path,

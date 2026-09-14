@@ -16,6 +16,10 @@ CameraController::CameraController(Camera& camera) noexcept
 
 auto CameraController::look(double cursor_x, double cursor_y) -> void {
     if (first_cursor_sample_) {
+        // Scene setup may change the camera after the controller is created.
+        const auto forward = camera_.forward();
+        yaw_ = std::atan2(-forward.x, -forward.z);
+        pitch_ = std::asin(std::clamp(forward.y, -1.0F, 1.0F));
         previous_cursor_x_ = cursor_x;
         previous_cursor_y_ = cursor_y;
         first_cursor_sample_ = false;

@@ -69,3 +69,38 @@ target("th1nk2r_renderer")
             os.cp(asset_dir, target:targetdir())
         end
     end)
+
+target("terrain_generator_tests")
+    set_kind("binary")
+    set_default(false)
+    set_targetdir("build/tests")
+    add_files(
+        "tests/scene/terrain_generator_tests.cpp",
+        "src/scene/terrain_generator.cpp",
+        "src/scene/scene.cpp",
+        "src/scene/camera.cpp",
+        "src/scene/component.cpp",
+        "src/scene/components/transform.cpp",
+        "src/scene/components/mesh_renderer.cpp",
+        "src/core/input/controller/camera_controller.cpp"
+    )
+    add_includedirs("./include")
+    add_packages("glm")
+    add_defines("GLM_FORCE_RADIANS", "GLM_FORCE_DEPTH_ZERO_TO_ONE")
+
+target("resource_registry_tests")
+    set_kind("binary")
+    set_default(false)
+    set_targetdir("build/tests")
+    add_files(
+        "tests/resource/resource_registry_tests.cpp",
+        "src/resource/registry/resource_registry.cpp",
+        "src/resource/model.cpp",
+        "src/gfx/resource/buffer.cpp",
+        "src/gfx/resource/image.cpp",
+        "src/gfx/device/buffer_uploader.cpp",
+        "src/gfx/device/memory_allocator.cpp"
+    )
+    add_includedirs("./include")
+    add_packages("vulkansdk", "glm", "vulkan-memory-allocator")
+    add_defines("VULKAN_HPP_NO_STRUCT_CONSTRUCTORS")

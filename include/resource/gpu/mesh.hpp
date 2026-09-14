@@ -1,44 +1,21 @@
 #ifndef MESH_HPP
 #define MESH_HPP
 
-#include "gfx/device/memory_allocator.hpp"
-#include "gfx/device/buffer_uploader.hpp"
-#include "gfx/resource/buffer.hpp"
-#include "resource/cpu/mesh.hpp"
 #include <cstdint>
 #include <glm/vec3.hpp>
 
-class Mesh {
-public:
+struct Mesh {
     struct Bounds {
         glm::vec3 minimum{0.0F};
         glm::vec3 maximum{0.0F};
     };
 
-    Mesh(
-        const MeshData& data,
-        const MemoryAllocator& allocator,
-        BufferUploader& uploader
-    );
-
-    Mesh(const Mesh&) = delete;
-    auto operator=(const Mesh&) -> Mesh& = delete;
-    Mesh(Mesh&&) noexcept = default;
-    auto operator=(Mesh&&) noexcept -> Mesh& = default;
-
-    auto bind(vk::raii::CommandBuffer& command_buffer) const -> void;
-    auto index_count() const noexcept -> uint32_t {
-        return index_count_;
-    }
-    auto bounds() const noexcept -> const Bounds& {
-        return bounds_;
-    }
-
-private:
-    uint32_t index_count_ = 0;
-    Bounds bounds_;
-    Buffer vertex_buffer_;
-    Buffer index_buffer_;
+    // Offsets are measured in vertices/indices, not bytes. Indices stay local.
+    int32_t vertex_offset = 0;
+    uint32_t vertex_count = 0;
+    uint32_t first_index = 0;
+    uint32_t index_count = 0;
+    Bounds bounds;
 };
 
 #endif

@@ -2,7 +2,7 @@
 
 基于 **C++20** 与 **Vulkan 1.4** 构建的模块化实时渲染器。项目采用 Vulkan-Hpp RAII 管理 Vulkan 对象，使用 VMA 分配 GPU 内存，通过 Assimp、stb_image 与 Slang 建立模型导入、纹理处理和着色器编译链路。
 
-渲染器将平台窗口、设备上下文、帧调度、资源系统、场景表达与渲染 Pass 分层组织，以清晰的所有权边界管理 GPU 资源。当前渲染路径支持 Metallic-Roughness PBR、基于计算着色器的 IBL 预计算、点光源 PCSS 全向软阴影、Mesh 级视锥剔除与天空盒渲染；帧内由八工作线程池调度阴影与前向两项主命令缓冲录制任务，并使用 Sponza 作为默认示例场景。
+渲染器将平台窗口、设备上下文、帧调度、资源系统、场景表达与渲染 Pass 分层组织，以清晰的所有权边界管理 GPU 资源。当前渲染路径支持 Metallic-Roughness PBR、基于计算着色器的 IBL 预计算、点光源 PCSS 全向软阴影、Mesh 级视锥剔除与天空盒渲染；帧内由八工作线程池调度阴影与前向两项主命令缓冲录制任务，默认示例为随机生成的 128×128 方块地形。
 
 ## 效果展示
 
@@ -18,18 +18,19 @@
 - **全向软阴影**：点光源使用 Cubemap Array 保存六面深度，片元阶段通过 PCSS 完成遮挡物搜索与可变半影过滤。
 - **天空盒与 HDR 色调映射**：直接显示环境 Cubemap，并对最终 HDR 光照结果执行 Reinhard Tone Mapping。
 - **多点光源**：场景点光源经 Storage Buffer 上传；每盏灯可独立配置强度、颜色、阴影范围和光源半径。
-- **Mesh 级视锥剔除**：前向 Pass 从相机 View-Projection 矩阵提取 Vulkan ZO 裁剪空间的六个视锥平面，以世界空间 AABB 逐 Mesh 判定可见性，并仅为可见 Mesh 记录材质绑定、网格绑定和索引绘制命令。
+- **Mesh 级视锥剔除**：前向 Pass 从相机 View-Projection 矩阵提取 Vulkan ZO 裁剪空间的六个视锥平面，以世界空间 AABB 逐 Mesh 判定可见性，并仅为可见 Mesh 记录材质绑定和索引绘制命令；几何缓冲区在每项录制任务中统一绑定。
 
 ### 资源与场景
 
 - 递归发现并导入 OBJ、FBX、glTF 与 GLB 模型。
 - 支持外部或内嵌 JPEG/PNG 纹理，以及 HDR 环境图。
 - 使用暂存 Buffer 批量上传顶点、索引和图像数据，并为 2D 纹理自动生成完整 Mipmap 链。
-- `Mesh` 构造阶段遍历顶点位置生成模型空间 AABB，并将边界作为网格资源的只读元数据保存。
+- `ResourceRegistry` 统一持有所有 Mesh 的大顶点、索引 Buffer；`Mesh` 是记录元素偏移、数量和模型空间 AABB 的范围结构体，索引保持局部编号。
 - CPU 导入数据、GPU 资源对象与 `ResourceRegistry` 分层管理，通过类型安全 `ResourceId` 引用资源。
-- `ModelImporter` 负责模型目录扫描、GPU 资源创建与注册，并在同一导入器实例内缓存纹理及其 sRGB/UNORM 变体；导入结果返回模型与材质 ID，应用调用 `Renderer::prepare_resources()` 完成上传和材质绑定初始化。
+- `ModelImporter` 负责模型目录扫描与资源注册，并在同一导入器实例内缓存纹理及其 sRGB/UNORM 变体；导入时将 CPU MeshData 移入注册表，应用在全部导入后调用 `ResourceRegistry::upload_meshes()` 创建共享几何 Buffer，再调用 `Renderer::prepare_resources()` 完成上传和材质绑定初始化。
 - `Scene` 持有相机、实体和点光源；`Entity` 按类型管理 `Component`，通过 `Transform` 表达变换，通过 `MeshRenderer` 引用模型。阴影和前向 Pass 只绘制同时具有这两个组件的实体。
 - `Model` 保存 `Primitive` 列表，每个 Primitive 分别引用网格与材质 ID，资源对象由注册表持有；自由飞行相机由输入系统驱动。
+- `TerrainGenerator` 保存固定 128×128 高度图，通过带 seed 的四层平滑 Value Noise 生成整数柱高，只为有外露面的方块创建实体，并共享传入的模型资源。
 
 ### 运行时与资源管理
 
@@ -46,8 +47,8 @@
 ## 设计原则
 
 - **显式资源所有权**：Vulkan RAII 与不可复制资源类型确保对象按依赖顺序释放。
-- **数据与运行时分离**：`io` 层解析文件并返回 CPU 数据；`ModelImporter` 将数据转换为 GPU 资源，注册表负责资源所有权与寻址。CPU 模型使用局部纹理、材质索引，运行时模型使用类型安全资源 ID。
-- **统一渲染入口**：`Renderer` 持有 `ShadowPass`、`ForwardPass` 和命令录制线程池，负责材质绑定初始化、环境图设置、帧调度、交换链恢复与呈现；各 Pass 保留具体绘制实现。
+- **数据与运行时分离**：`io` 层解析文件并返回 CPU 数据；`ModelImporter` 注册模型资源，注册表负责资源所有权、几何缓冲区构建与寻址。CPU 模型使用局部纹理、材质索引，运行时模型使用类型安全资源 ID。
+- **统一渲染入口**：`Renderer` 持有 `ShadowPass`、`ForwardPass`，引用由 `Application` 持有的线程池，负责材质绑定初始化、环境图设置、帧调度、交换链恢复与呈现；各 Pass 保留具体绘制实现。
 - **主循环与图形 API 隔离**：`Renderer` 的渲染接口接收场景、资源 ID 和 CPU 图像数据，通过私有实现隐藏帧调度所需的 Vulkan 对象。`Application::loop()` 只处理事件、计时、场景更新和通用帧结果；应用仍持有 `DeviceContext`，用于构造 Renderer 和导入资源。
 - **独立帧间计时**：`Application` 长期持有 `Timer`，通过 `std::chrono::steady_clock` 计算以秒为单位的帧间隔，默认限制最大时间步长为 `0.05F`。进入主循环和跳帧后重置计时基准。
 - **并行录制资源隔离**：命令录制槽位按在途帧组织，每个槽位独占 Command Pool 与 Primary Command Buffer；相机、灯光和阴影资源同样按帧索引访问。
@@ -70,7 +71,7 @@
 
 ## 架构
 
-项目按平台、设备、资源、场景和渲染职责拆分模块。`DeviceContext` 聚合 Vulkan 设备级基础设施，`Renderer` 在私有实现中持有交换链、在途帧、阴影 Pass、前向 Pass 和 `ThreadPool<8>`，统一组织帧内录制与呈现。Renderer 构造时绑定设备上下文、窗口和只读资源注册表引用，这些对象的生命周期均长于 Renderer；各 Pass 使用该注册表解析场景组件中的模型 ID，以及模型 Primitive 中的网格、材质 ID，并独立维护其管线、描述符和命令记录逻辑。应用通过 `Renderer::prepare_resources()` 完成上传和材质绑定初始化，通过 `set_environment()` 设置环境图，并通过 `render(scene)` 请求渲染。
+项目按平台、设备、资源、场景和渲染职责拆分模块。`DeviceContext` 聚合 Vulkan 设备级基础设施，`Renderer` 在私有实现中持有交换链、在途帧、阴影 Pass 和前向 Pass，统一组织帧内录制与呈现。`Application` 长期持有通用线程池 `ThreadPool<8>`；Renderer 构造时绑定设备上下文、窗口、只读资源注册表和线程池引用，这些对象的生命周期均长于 Renderer；各 Pass 使用该注册表解析场景组件中的模型 ID，以及模型 Primitive 中的网格、材质 ID，并独立维护其管线、描述符和命令记录逻辑。应用通过 `Renderer::prepare_resources()` 完成上传和材质绑定初始化，通过 `set_environment()` 设置环境图，并通过 `render(scene)` 请求渲染。
 
 ```mermaid
 flowchart LR
@@ -79,7 +80,8 @@ flowchart LR
     CPU --> Importer["ModelImporter"]
     Importer --> GPU["GPU Resources / Model Primitives"]
     GPU --> Registry["ResourceRegistry"]
-    Importer --> Upload["Buffer / Image Uploader"]
+    Importer -->|纹理| Upload["Buffer / Image Uploader"]
+    Registry -->|几何| Upload
     HDR["HDR 环境图"] --> ImageIO["io: stb_image"]
     ImageIO --> Panorama["HdrImageData"]
 
@@ -91,7 +93,9 @@ flowchart LR
     Panorama --> Renderer
     Renderer --> Upload
     Renderer --> Prepare["ShadowPass::prepare"]
-    Renderer --> Pool["ThreadPool&lt;8&gt;"]
+    App["Application"] -->|持有| Pool["ThreadPool&lt;8&gt;"]
+    App -->|持有| Renderer
+    Renderer -->|引用 / 投递任务| Pool
     Renderer --> Shadow["ShadowPass"]
     Renderer --> Forward["ForwardPass"]
     Prepare --> Shadow
@@ -123,19 +127,19 @@ flowchart LR
 | `gfx/resource` | VMA Buffer/Image 封装与资源描述 |
 | `io` | SPIR-V 读取校验、Assimp 模型解析与图像解码，返回 CPU 数据 |
 | `resource` | CPU/GPU 资源、模型导入器、材质、网格、模型与资源注册表 |
-| `scene` | 相机、点光源、实体与组件管理；Transform 变换和 MeshRenderer 模型引用 |
+| `scene` | 相机、点光源、实体与组件管理；Transform 变换、MeshRenderer 模型引用与方块地形生成 |
 | `render` | 统一渲染入口、Pass 所有权、并行录制调度、材质与环境设置、交换链恢复及呈现 |
 | `render/pass/shadow` | 点光源 Cubemap Array 深度生成与阴影描述符输出 |
 | `render/pass/forward` | Mesh 级视锥剔除、PBR 前向着色、IBL 预计算、材质/相机/灯光描述符与天空盒 |
 
 ### 启动阶段
 
-1. `Application` 创建场景、GLFW 窗口、设备上下文、资源注册表、输入系统和 Timer；设备上下文创建 Vulkan 实例、Surface、物理/逻辑设备、VMA 和上传器。
-2. `Renderer` 创建 Swapchain、帧同步与命令录制资源、阴影 Pass、前向 Pass 和八工作线程池。
+1. `Application` 创建场景、GLFW 窗口、设备上下文、资源注册表、输入系统、Timer 和八工作线程池；设备上下文创建 Vulkan 实例、Surface、物理/逻辑设备、VMA 和上传器。
+2. `Renderer` 引用应用的线程池，并创建 Swapchain、帧同步与命令录制资源、阴影 Pass 和前向 Pass。
 3. `Application` 调用 `ModelImporter` 递归扫描 `assets/models/`，导入并注册模型、材质与纹理。
-4. `Renderer::prepare_resources()` 提交暂存上传、生成纹理 Mipmap，并初始化两个 Pass 的材质绑定。
+4. `ResourceRegistry::upload_meshes()` 按总数据量创建大 VB/IB，逐 Mesh 排队上传至对应字节偏移并释放 CPU 几何数据；`Renderer::prepare_resources()` 提交暂存上传、生成纹理 Mipmap，并初始化两个 Pass 的材质绑定。
 5. 加载 HDR 环境图，通过 `Renderer::set_environment()` 使用 Compute Shader 生成 IBL 所需的 Cubemap 与查找表。
-6. 创建具有 `Transform` 和 `MeshRenderer` 的默认 Sponza 实体，设置相机位置和投射阴影的点光源；进入主循环前重置 Timer。
+6. 使用 `rocky_soil_smooth` 模型生成 128×128 方块地形，设置俯视相机和点光源；默认关闭该点光源的阴影，进入主循环前重置 Timer。
 
 ### 单帧流程
 
@@ -277,11 +281,44 @@ Pop-Location
 - 名称与扫描根目录、上层目录和模型文件名无关；直接放在扫描根目录中的模型使用该根目录的文件夹名。
 - 不同模型必须拥有唯一注册名。同一文件夹中的多个模型，或不同位置的同名文件夹会产生重名，导入器会报错；建议每个模型放在名称唯一的独立目录中。
 
-`ModelImporter::import_model()` 支持导入单个模型，默认同样使用模型所在文件夹的名字，也可以传入显式名称。两个导入接口只排队上传数据；应用在使用资源前调用 `Renderer::prepare_resources()`，由 Renderer 提交 `BufferUploader` 和 `ImageUploader` 并初始化材质绑定。`io` 层继续负责解析文件并返回 CPU 数据，`ResourceRegistry` 只负责持有和查询资源。
+`ModelImporter::import_model()` 支持导入单个模型，默认同样使用模型所在文件夹的名字，也可以传入显式名称。两个导入接口暂存 CPU 几何数据、登记 Mesh 范围并排队上传纹理；几何数据登记时不会创建 GPU Buffer。全部模型导入完成后，应用先调用 `registry_.upload_meshes(device_context_.allocator(), device_context_.buffer_uploader())`，再调用 `Renderer::prepare_resources()` 提交上传并初始化材质绑定。
+
+共享几何缓冲区只构建一次，开始排队上传后禁止继续添加 Mesh，重复构建会抛出异常。Mesh 的 `vertex_offset`、`first_index` 分别以顶点、索引为单位，绘制时作为 `drawIndexed()` 参数使用；上传时才换算为字节偏移。当前仍逐 Mesh 绘制，共享缓冲区本身不减少 draw call 数量。
+
+不启动窗口或 Vulkan 设备的 Mesh 范围、Bounds 和资源 ID 检查：
+
+```powershell
+xmake build resource_registry_tests
+xmake run resource_registry_tests
+```
 
 `prepare_resources()` 应传入尚未初始化绑定的材质 ID；重复传入同一材质会抛出异常。当前环境图只支持初始化一次，首次渲染前必须调用 `set_environment()`，重复设置同样会抛出异常。
 
-当前示例启动时导入 `assets/models/` 下的全部模型，包括 `blocks/` 中的材质预览 GLB，但只在 `Application::setup_scene()` 中为 `sponza` 创建实体。环境图在 `Application::run()` 中加载，路径为 `assets/models/sponza/mud_road_puresky_2k.hdr`。替换默认示例时可分别修改实体使用的模型注册名和环境图路径。
+当前示例启动时导入 `assets/models/` 下的全部模型，包括 `blocks/` 中的材质预览 GLB，在 `Application::setup_scene()` 中通过 `TerrainGenerator` 创建泥土地形。环境图在 `Application::run()` 中加载，路径为 `assets/models/sponza/mud_road_puresky_2k.hdr`。替换默认示例时可分别修改地形使用的模型注册名和环境图路径。
+
+### 方块地形
+
+地形生成器位于 `include/scene/terrain_generator.hpp` 和 `src/scene/terrain_generator.cpp`。App 持有生成器以保留高度图，并在场景初始化时传入 `Scene&`、方块模型 ID 和配置：
+
+```cpp
+TerrainConfig config{.seed = 12345, .min_height = 4, .max_height = 24};
+terrain_generator_.generate(
+    scene_, registry_.query_model_id("rocky_soil_smooth"), config
+);
+```
+
+默认场景在每次启动时随机选取 seed；将 `setup_scene()` 中的 seed 改为固定值可复现地形。`noise_frequency` 控制起伏尺度，取值为 `(0, 1]`；更小的值产生更宽的山坡。高度表示从 `y=0` 开始堆叠的方块层数，须满足 `1 <= min_height <= max_height`，两者相等时生成平地。`block_size` 为正的方块边长，`origin` 为地形底面的最小角点；默认边长 1、原点 `(-64, 0, -64)`，地形覆盖 XZ 平面的 `[-64, 64]`。
+
+模型应是以原点为中心的单位立方体。生成器补齐顶面、侧面、地图边缘和底面，只创建至少有一个面外露的方块；每个方块仍使用完整模型，当前没有面级裁剪或实例化。`height_map()` 返回按 `z * 128 + x` 索引的高度图，`height_at(x, z)` 提供坐标查询。`generate()` 返回添加的实体数，保留相机、灯光和已有实体；重复调用会追加地形，替换整块场景时应由调用方先清理实体。
+
+不启动窗口或 Vulkan 设备的地形检查：
+
+```powershell
+xmake build terrain_generator_tests
+xmake run terrain_generator_tests
+```
+
+### 创建普通实体
 
 创建可绘制实体的方式：
 

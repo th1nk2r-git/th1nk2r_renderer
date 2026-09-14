@@ -24,16 +24,22 @@ struct Renderer::Impl {
     DeviceContext& device_context;
     Window& window;
     const ResourceRegistry& registry;
+    ThreadPool<8>& thread_pool;
     Swapchain swapchain;
     FramesInFlight frames_in_flight;
     ShadowPass shadow_pass;
     ForwardPass forward_pass;
-    ThreadPool<8> recording_pool;
 
-    Impl(DeviceContext& context, Window& target_window, const ResourceRegistry& resources)
+    Impl(
+        DeviceContext& context,
+        Window& target_window,
+        const ResourceRegistry& resources,
+        ThreadPool<8>& pool
+    )
         : device_context(context),
           window(target_window),
           registry(resources),
+          thread_pool(pool),
           swapchain(context, target_window),
           frames_in_flight(context.device()),
           shadow_pass(
@@ -98,7 +104,7 @@ struct Renderer::Impl {
             .extent = swapchain.extent()
         };
 
-        auto shadow_future = recording_pool.run(
+        auto shadow_future = thread_pool.run(
             [this, &frame, &scene, &shadow_output, frame_index] {
                 frame.record(shadow_recording_slot, [&, this](
                     vk::raii::CommandBuffer& command_buffer
@@ -117,7 +123,7 @@ struct Renderer::Impl {
 
         std::future<void> forward_future;
         try {
-            forward_future = recording_pool.run(
+            forward_future = thread_pool.run(
                 [this, &frame, &scene, &shadow_output, &target, frame_index] {
                     frame.record(forward_recording_slot, [&, this](
                         vk::raii::CommandBuffer& command_buffer
@@ -234,8 +240,9 @@ struct Renderer::Impl {
 Renderer::Renderer(
     DeviceContext& device_context,
     Window& window,
-    const ResourceRegistry& registry
-) : impl_(std::make_unique<Impl>(device_context, window, registry)) {}
+    const ResourceRegistry& registry,
+    ThreadPool<8>& thread_pool
+) : impl_(std::make_unique<Impl>(device_context, window, registry, thread_pool)) {}
 
 Renderer::~Renderer() noexcept = default;
 

@@ -4,7 +4,7 @@
 #include "resource/gpu/resource_id.hpp"
 
 class Material;
-class Mesh;
+struct Mesh;
 
 struct Primitive {
     ResourceId<Mesh> mesh;

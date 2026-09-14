@@ -127,7 +127,7 @@ auto ModelImporter::import_model(
         );
     }
 
-    const auto data = load_model(path);
+    auto data = load_model(path);
     if (data.material_.empty()) {
         throw std::runtime_error(
             "loaded model does not contain a local material list"
@@ -141,7 +141,7 @@ auto ModelImporter::import_model(
     std::vector<Primitive> primitives;
     primitives.reserve(data.meshes_.size());
 
-    for (const auto& mesh_data : data.meshes_) {
+    for (auto& mesh_data : data.meshes_) {
         const auto material_index = mesh_data.material_index_;
         if (material_index >= data.material_.size()) {
             throw std::out_of_range(
@@ -192,13 +192,7 @@ auto ModelImporter::import_model(
             result.materials.push_back(*material_id);
         }
 
-        const auto mesh_id = registry_.add(
-            std::make_unique<Mesh>(
-                mesh_data,
-                device_context_.allocator(),
-                device_context_.buffer_uploader()
-            )
-        );
+        const auto mesh_id = registry_.add(std::move(mesh_data));
         primitives.push_back(
             Primitive{
                 .mesh = mesh_id,

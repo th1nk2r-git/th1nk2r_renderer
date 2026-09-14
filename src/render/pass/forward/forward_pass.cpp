@@ -505,6 +505,16 @@ auto ForwardPass::record(
         *pipeline_
     );
 
+    const auto& vertex_buffer = input.registry.vertex_buffer();
+    if (vertex_buffer.get()) {
+        const std::array vertex_buffers{vertex_buffer.get()};
+        constexpr std::array<vk::DeviceSize, 1> offsets{0};
+        command_buffer.bindVertexBuffers(0, vertex_buffers, offsets);
+        command_buffer.bindIndexBuffer(
+            input.registry.index_buffer().get(), 0, vk::IndexType::eUint32
+        );
+    }
+
     const std::array camera_descriptor_sets{
         *camera_writer_.descriptor_set(context.frame_index)
     };
@@ -561,7 +571,7 @@ auto ForwardPass::record(
         const auto& model = input.registry.query(mesh_renderer->model_id());
         for (const auto& primitive : model.primitives()) {
             const auto& mesh = input.registry.query(primitive.mesh);
-            if (!intersects(frustum, mesh.bounds(), model_matrix)) {
+            if (!intersects(frustum, mesh.bounds, model_matrix)) {
                 continue;
             }
 
@@ -607,8 +617,9 @@ auto ForwardPass::record(
                 {}
             );
 
-            mesh.bind(command_buffer);
-            command_buffer.drawIndexed(mesh.index_count(), 1, 0, 0, 0);
+            command_buffer.drawIndexed(
+                mesh.index_count, 1, mesh.first_index, mesh.vertex_offset, 0
+            );
         }
     }
 

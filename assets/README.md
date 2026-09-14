@@ -35,7 +35,7 @@ Poly Haven distributes that asset under [CC0](https://polyhaven.com/license).
 ## Material preview models
 
 `models/blocks/` contains GLB material preview models. The application imports
-them at startup, but the default scene only creates a Sponza entity.
+them at startup; the default terrain uses the `rocky_soil_smooth` preview cube.
 
 Each preview directory includes a `credits.txt` recording the source texture's
 title, source URL and authors. Those records reference Poly Haven, ambientCG
