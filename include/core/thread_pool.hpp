@@ -1,6 +1,7 @@
 #ifndef THREAD_POOL_HPP
 #define THREAD_POOL_HPP
 
+#include <cstddef>
 #include <thread>
 #include <vector>
 #include <queue>
@@ -13,12 +14,17 @@
 #include <utility>
 #include <stdexcept>
 
-template <int size>
 class ThreadPool {
 public:
-    ThreadPool() {
+    explicit ThreadPool(std::size_t size) {
+        if (size == 0) {
+            throw std::invalid_argument(
+                "thread pool requires at least one worker!"
+            );
+        }
+
         threads_.reserve(size);
-        for (int i = 0; i < size; i++) {
+        for (std::size_t index = 0; index < size; ++index) {
             threads_.emplace_back([this] {
                 work();
             });
@@ -27,8 +33,8 @@ public:
 
     ~ThreadPool() {
         stop();
-        for (int i = 0; i < size; i++) {
-            threads_[i].join();
+        for (auto& thread : threads_) {
+            thread.join();
         }
     }
 

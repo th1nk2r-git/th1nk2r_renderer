@@ -32,7 +32,7 @@ private:
     ResourceRegistry registry_;
     InputSystem input_system_;
     Timer timer_;
-    ThreadPool<8> thread_pool_;
+    ThreadPool thread_pool_{8};
     Renderer renderer_;
 
     // setup the main scene

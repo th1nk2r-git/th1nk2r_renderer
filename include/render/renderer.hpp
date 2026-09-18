@@ -1,19 +1,20 @@
 #ifndef RENDERER_HPP
 #define RENDERER_HPP
 
-#include <memory>
-#include <span>
+#include <cstdint>
 
-#include "resource/gpu/resource_id.hpp"
+#include "core/thread_pool.hpp"
+#include "gfx/device/device_context.hpp"
+#include "gfx/frame/frames_in_flight.hpp"
+#include "gfx/frame/swapchain.hpp"
+#include "platform/window.hpp"
+#include "render/buffer_registry.hpp"
+#include "render/image_registry.hpp"
+#include "render/pass/forward/forward_pass.hpp"
+#include "render/render_graph.hpp"
 
-class DeviceContext;
-class Material;
 class ResourceRegistry;
 class Scene;
-class Window;
-template <int size>
-class ThreadPool;
-struct HdrImageData;
 
 class Renderer {
 public:
@@ -22,12 +23,11 @@ public:
         Skipped
     };
 
-    // Referenced dependencies must outlive the renderer.
     Renderer(
         DeviceContext& device_context,
         Window& window,
-        const ResourceRegistry& registry,
-        ThreadPool<8>& thread_pool
+        const ResourceRegistry& resources,
+        ThreadPool& thread_pool
     );
     ~Renderer() noexcept;
 
@@ -36,18 +36,31 @@ public:
     Renderer(Renderer&&) = delete;
     auto operator=(Renderer&&) -> Renderer& = delete;
 
-    // Complete queued uploads and initialize material bindings for all passes.
-    auto prepare_resources(std::span<const ResourceId<Material>> material_ids) -> void;
+    auto init() -> void;
 
-    auto set_environment(const HdrImageData& panorama) -> void;
-
-    // Window changes and presentation recovery are handled internally.
     auto render(const Scene& scene) -> FrameResult;
     auto wait_idle() const -> void;
 
 private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
+    DeviceContext& device_context_;
+    Window& window_;
+    Swapchain swapchain_;
+    FramesInFlight frames_in_flight_;
+    ImageRegistry images_;
+    BufferRegistry buffers_;
+    ForwardPass forward_pass_;
+    RenderGraph render_graph_;
+    bool initialized_ = false;
+
+    auto init_render_pass() -> void;
+    auto build_render_graph() -> void;
+    auto recreate_swapchain() -> void;
+    auto record_frame(
+        const Scene& scene,
+        uint32_t image_index
+    ) -> void;
+    auto submit(uint32_t image_index) -> void;
+    auto present(uint32_t image_index) -> vk::Result;
 };
 
 #endif

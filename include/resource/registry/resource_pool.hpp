@@ -44,6 +44,10 @@ public:
         return *resources_[index];
     }
 
+    auto size() const noexcept -> std::size_t {
+        return resources_.size();
+    }
+
 private:
     std::vector<std::unique_ptr<T>> resources_;
 };

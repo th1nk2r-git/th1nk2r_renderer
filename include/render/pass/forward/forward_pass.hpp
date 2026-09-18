@@ -2,15 +2,13 @@
 #define FORWARD_PASS_HPP
 
 #include <cstdint>
-#include <span>
+#include <unordered_map>
 #include <vector>
 
 #include "gfx/device/device.hpp"
-#include "render/pass/forward/camera_writer.hpp"
-#include "render/pass/forward/ibl_writer.hpp"
-#include "render/pass/forward/light_writer.hpp"
-#include "render/pass/forward/material_writer.hpp"
-#include "render/pass/shadow/shadow_pass.hpp"
+#include "gfx/frame/frames_in_flight.hpp"
+#include "gfx/frame/swapchain.hpp"
+#include "gfx/resource/buffer.hpp"
 
 class MemoryAllocator;
 class ResourceRegistry;
@@ -18,29 +16,12 @@ class Scene;
 
 class ForwardPass {
 public:
-    struct ExecutionContext {
-        vk::raii::CommandBuffer& command_buffer;
-        uint32_t frame_index = 0;
-    };
-
-    struct Input {
-        const Scene& scene;
-        const ResourceRegistry& registry;
-        const ShadowPass::Output& shadow;
-    };
-
-    struct Output {
-        const vk::raii::RenderPass& render_pass;
-        const vk::raii::Framebuffer& framebuffer;
-        vk::Extent2D extent;
-    };
-
     ForwardPass(
         const Device& device,
         const MemoryAllocator& allocator,
-        const vk::raii::RenderPass& render_pass,
-        const vk::raii::DescriptorSetLayout& shadow_descriptor_set_layout,
-        uint32_t frame_count
+        const FramesInFlight& frames_in_flight,
+        const Swapchain& swapchain,
+        const ResourceRegistry& resources
     );
 
     ForwardPass(const ForwardPass&) = delete;
@@ -48,36 +29,43 @@ public:
     ForwardPass(ForwardPass&&) = delete;
     auto operator=(ForwardPass&&) -> ForwardPass& = delete;
 
-    auto write_material(
-        std::span<const ResourceId<Material>> material_ids,
-        const ResourceRegistry& registry
-    ) -> void;
+    auto init() -> void;
 
-    auto write_environment(
-        const HdrImageData& panorama,
-        ImageUploader& uploader
-    ) -> void;
-
-    auto record(
-        ExecutionContext context,
-        Input input,
-        Output output
-    ) -> void;
+    auto prepare(const Scene& scene, uint32_t image_index) -> void;
+    auto record() -> vk::CommandBuffer;
 
     auto recreate_pipeline(
-        const Device& device,
         const vk::raii::RenderPass& render_pass
     ) -> void;
 
 private:
-    std::vector<vk::raii::DescriptorSetLayout> descriptor_set_layouts_;
+    static constexpr uint32_t max_material_count_ = 1024;
+
+    const Device& device_;
+    const FramesInFlight& frames_in_flight_;
+    const Swapchain& swapchain_;
+    const ResourceRegistry& resources_;
+
+    const Scene* scene_ = nullptr;
+    uint32_t image_index_ = 0;
+    bool initialized_ = false;
+
+    vk::raii::DescriptorSetLayout camera_layout_ = nullptr;
+    vk::raii::DescriptorSetLayout material_layout_ = nullptr;
     vk::raii::PipelineLayout pipeline_layout_ = nullptr;
     vk::raii::Pipeline pipeline_ = nullptr;
-    vk::raii::Pipeline skybox_pipeline_ = nullptr;
-    CameraWriter camera_writer_;
-    MaterialWriter material_writer_;
-    LightWriter light_writer_;
-    IblWriter ibl_writer_;
+
+    vk::raii::DescriptorPool camera_descriptor_pool_ = nullptr;
+    vk::raii::DescriptorPool material_descriptor_pool_ = nullptr;
+
+    std::vector<Buffer> camera_buffers_;
+    std::vector<vk::raii::DescriptorSet> camera_descriptor_sets_;
+
+    vk::raii::Sampler sampler_ = nullptr;
+    std::unordered_map<uint32_t, vk::raii::DescriptorSet> material_descriptor_sets_;
+    
+    std::vector<vk::raii::CommandPool> command_pools_;
+    std::vector<vk::raii::CommandBuffer> command_buffers_;
 };
 
 #endif

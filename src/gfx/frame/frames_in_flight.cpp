@@ -4,15 +4,17 @@
 #include <utility>
 
 namespace {
-    auto create_command_pool(const Device& device) -> vk::raii::CommandPool {
+    auto create_primary_command_pool(
+        const Device& device
+    ) -> vk::raii::CommandPool {
         const vk::CommandPoolCreateInfo create_info{
-            .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+            .flags = vk::CommandPoolCreateFlagBits::eTransient,
             .queueFamilyIndex = device.graphics_family()
         };
         return device.logical_device().createCommandPool(create_info);
     }
 
-    auto create_command_buffer(
+    auto create_primary_command_buffer(
         const Device& device,
         const vk::raii::CommandPool& command_pool
     ) -> vk::raii::CommandBuffer {
@@ -39,43 +41,36 @@ namespace {
     }
 }
 
-CommandRecordingSlot::CommandRecordingSlot(const Device& device)
-    : command_pool(create_command_pool(device)),
-      command_buffer(create_command_buffer(device, command_pool)) {}
-
 Frame::Frame(const Device& device)
-    : image_available(
+    : primary_command_pool(create_primary_command_pool(device)),
+      primary_command_buffer(
+          create_primary_command_buffer(device, primary_command_pool)
+      ),
+      image_available(
           device.logical_device().createSemaphore(vk::SemaphoreCreateInfo{})
       ),
       in_flight_fence(
           device.logical_device().createFence(vk::FenceCreateInfo{
               .flags = vk::FenceCreateFlagBits::eSignaled
           })
-      ),
-      recording_slots_{
-          CommandRecordingSlot{device},
-          CommandRecordingSlot{device}
-      } {}
+      ) {}
 
-auto Frame::command_buffers() const noexcept
-    -> std::array<vk::CommandBuffer, recording_slot_count> {
-    return {
-        *recording_slots_[0].command_buffer,
-        *recording_slots_[1].command_buffer
-    };
+auto Frame::reset_primary() -> void {
+    primary_command_pool.reset();
 }
 
 FramesInFlight::FramesInFlight(const Device& device)
-    : frames_(create_frames(device, max_frames_in_flight_)) {}
+    : device_(device),
+      frames_(create_frames(device, frame_count_)) {}
 
-auto FramesInFlight::wait(const Device& device) -> void {
-    static_cast<void>(device.logical_device().waitForFences(
-        *current_frame().in_flight_fence,
+auto FramesInFlight::wait_current() const -> void {
+    static_cast<void>(device_.logical_device().waitForFences(
+        *current().in_flight_fence,
         true,
         std::numeric_limits<uint64_t>::max()
     ));
 }
 
-auto FramesInFlight::reset(const Device& device) -> void {
-    device.logical_device().resetFences(*current_frame().in_flight_fence);
+auto FramesInFlight::reset_current_fence() const -> void {
+    device_.logical_device().resetFences(*current().in_flight_fence);
 }

@@ -43,6 +43,10 @@ public:
     auto query(ResourceId<Mesh> id) const -> const Mesh&;
     auto query(ResourceId<Model> id) const -> const Model&;
 
+    auto material_count() const noexcept -> std::size_t {
+        return materials_.size();
+    }
+
     auto set_model_name(ResourceId<Model> id, std::string name) -> void;
     auto query_model_id(std::string_view name) const -> ResourceId<Model>;
     auto query_model(std::string_view name) const -> const Model&;
