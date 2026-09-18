@@ -18,13 +18,26 @@ struct ImageDesc {
     vk::ImageTiling tiling = vk::ImageTiling::eOptimal;
     vk::ImageUsageFlags usage{};
     vk::ImageLayout initial_layout = vk::ImageLayout::eUndefined;
+    vk::ImageLayout final_layout = vk::ImageLayout::eUndefined;
 };
+
+class Device;
 
 class Image {
 public:
     Image() = default;
-    Image(const MemoryAllocator& allocator, const ImageDesc& desc);
+    Image(
+        const Device& device,
+        const MemoryAllocator& allocator,
+        const ImageDesc& desc
+    );
     ~Image() noexcept;
+
+    static auto external(
+        const Device& device,
+        vk::Image handle,
+        const ImageDesc& desc
+    ) -> Image;
 
     Image(const Image&) = delete;
     auto operator=(const Image&) -> Image& = delete;
@@ -33,6 +46,22 @@ public:
 
     auto get() const noexcept -> vk::Image {
         return vk::Image{handle_};
+    }
+
+    auto has_view() const noexcept -> bool {
+        return static_cast<VkImageView>(*view_) != VK_NULL_HANDLE;
+    }
+
+    auto view() const noexcept -> const vk::raii::ImageView& {
+        return view_;
+    }
+
+    auto id() const noexcept -> uint64_t {
+        return id_;
+    }
+
+    auto external() const noexcept -> bool {
+        return external_;
     }
 
     auto type() const noexcept -> vk::ImageType {
@@ -63,12 +92,30 @@ public:
         return usage_;
     }
 
+    auto initial_layout() const noexcept -> vk::ImageLayout {
+        return initial_layout_;
+    }
+
+    auto final_layout() const noexcept -> vk::ImageLayout {
+        return final_layout_;
+    }
+
 private:
+    Image(
+        const Device& device,
+        vk::Image handle,
+        const ImageDesc& desc
+    );
+
     auto reset() noexcept -> void;
 
     VmaAllocator allocator_ = nullptr;
     VkImage handle_ = VK_NULL_HANDLE;
     VmaAllocation allocation_ = nullptr;
+    vk::raii::ImageView view_ = nullptr;
+
+    uint64_t id_ = 0;
+    bool external_ = false;
 
     vk::ImageType type_ = vk::ImageType::e2D;
     vk::Format format_ = vk::Format::eUndefined;
@@ -77,6 +124,8 @@ private:
     uint32_t array_layers_ = 0;
     vk::SampleCountFlagBits samples_ = vk::SampleCountFlagBits::e1;
     vk::ImageUsageFlags usage_{};
+    vk::ImageLayout initial_layout_ = vk::ImageLayout::eUndefined;
+    vk::ImageLayout final_layout_ = vk::ImageLayout::eUndefined;
 };
 
 #endif

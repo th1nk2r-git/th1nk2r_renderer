@@ -22,7 +22,7 @@ auto BufferRegistry::add(std::string name, Buffer buffer) -> void {
     }
 }
 
-auto BufferRegistry::buffer(std::string_view name) -> Buffer& {
+auto BufferRegistry::query(std::string_view name) -> Buffer& {
     const auto iterator = buffers_.find(std::string{name});
     if (iterator == buffers_.end()) {
         throw std::out_of_range(
@@ -32,7 +32,7 @@ auto BufferRegistry::buffer(std::string_view name) -> Buffer& {
     return iterator->second;
 }
 
-auto BufferRegistry::buffer(std::string_view name) const -> const Buffer& {
+auto BufferRegistry::query(std::string_view name) const -> const Buffer& {
     const auto iterator = buffers_.find(std::string{name});
     if (iterator == buffers_.end()) {
         throw std::out_of_range(

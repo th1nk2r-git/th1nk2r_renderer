@@ -10,8 +10,10 @@ struct GraphicsPipelineDesc {
     const vk::raii::ShaderModule* fragment_shader = nullptr;
 
     const vk::raii::PipelineLayout* layout = nullptr;
-    const vk::raii::RenderPass* render_pass = nullptr;
-    uint32_t subpass = 0;
+
+    std::vector<vk::Format> color_attachment_formats;
+    vk::Format depth_attachment_format = vk::Format::eUndefined;
+    vk::Format stencil_attachment_format = vk::Format::eUndefined;
 
     std::vector<vk::VertexInputBindingDescription> vertex_bindings;
 
@@ -30,8 +32,6 @@ struct GraphicsPipelineDesc {
     vk::CompareOp depth_compare_op = vk::CompareOp::eLess;
 
     bool blend_enable = false;
-
-    uint32_t color_attachment_count = 1;
 
     bool depth_bias_enable = false;
 

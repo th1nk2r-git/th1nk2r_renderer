@@ -1,6 +1,5 @@
 #include "render/renderer.hpp"
 
-#include <array>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -12,41 +11,56 @@ Renderer::Renderer(
     ThreadPool& thread_pool
 ) : device_context_(device_context),
     window_(window),
+    resources_(resources),
     swapchain_(device_context, window),
     frames_in_flight_(device_context.device()),
-    forward_pass_(
-        device_context.device(),
-        device_context.allocator(),
-        frames_in_flight_,
-        swapchain_,
-        resources
-    ),
-    render_graph_(images_, buffers_, thread_pool) {}
+    render_graph_(images_, buffers_, thread_pool) {
+    bind_swapchain_images(0);
+}
 
 auto Renderer::init() -> void {
-    if (initialized_) {
-        throw std::logic_error(
-            "renderer is already initialized!"
-        );
-    }
-
+    create_render_pass();
     init_render_pass();
     build_render_graph();
-    initialized_ = true;
+}
+
+auto Renderer::create_render_pass() -> void {
 }
 
 auto Renderer::init_render_pass() -> void {
-    forward_pass_.init();
+    for (auto& render_pass : render_passes_) {
+        render_pass->init();
+    }
 }
 
 auto Renderer::build_render_graph() -> void {
-    render_graph_.create_node(
-        "forward",
-        [this] {
-            return forward_pass_.record();
-        }
-    );
+    for (const auto& render_pass : render_passes_) {
+        auto* pass = render_pass.get();
+        render_graph_.create_node(
+            std::string{pass->name()},
+            [pass] {
+                return pass->record();
+            }
+        );
+    }
+
+    for (const auto& render_pass : render_passes_) {
+        render_pass->configure(render_graph_);
+    }
+
+    render_graph_.set_output("backbuffer");
     render_graph_.compile();
+}
+
+auto Renderer::bind_swapchain_images(uint32_t image_index) -> void {
+    images_.bind_external(
+        "backbuffer",
+        swapchain_.image(image_index)
+    );
+    images_.bind_external(
+        "depth",
+        swapchain_.depth_image(image_index)
+    );
 }
 
 Renderer::~Renderer() noexcept {
@@ -81,50 +95,26 @@ auto Renderer::recreate_swapchain() -> void {
         window_,
         *swapchain_.handle()
     );
-    if (!swapchain_.compatible_with(replacement)) {
-        forward_pass_.recreate_pipeline(replacement.render_pass());
-    }
     swapchain_ = std::move(replacement);
+    bind_swapchain_images(0);
     static_cast<void>(window_.consume_framebuffer_resized());
 }
 
-auto Renderer::record_frame(
-    const Scene& scene,
-    uint32_t image_index
-) -> void {
+auto Renderer::record_frame(const Scene& scene, uint32_t image_index) -> void {
     auto& frame = frames_in_flight_.current();
-    frame.reset_primary();
-    forward_pass_.prepare(scene, image_index);
+    frame.reset();
+    bind_swapchain_images(image_index);
+
+    for (auto& render_pass : render_passes_) {
+        render_pass->prepare(scene);
+    }
 
     auto& command_buffer = frame.primary_command_buffer;
     command_buffer.begin(vk::CommandBufferBeginInfo{
         .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
     });
 
-    std::array<vk::ClearValue, 2> clear_values{};
-    clear_values[0].color.float32[0] = 0.01F;
-    clear_values[0].color.float32[1] = 0.015F;
-    clear_values[0].color.float32[2] = 0.025F;
-    clear_values[0].color.float32[3] = 1.0F;
-    clear_values[1].depthStencil.depth = 1.0F;
-    clear_values[1].depthStencil.stencil = 0;
-
-    vk::RenderPassBeginInfo begin_info{};
-    begin_info
-        .setRenderPass(*swapchain_.render_pass())
-        .setFramebuffer(*swapchain_.framebuffers().at(image_index))
-        .setRenderArea(vk::Rect2D{
-            .offset = vk::Offset2D{0, 0},
-            .extent = swapchain_.extent()
-        })
-        .setClearValues(clear_values);
-
-    command_buffer.beginRenderPass(
-        begin_info,
-        vk::SubpassContents::eSecondaryCommandBuffers
-    );
     render_graph_.record(command_buffer);
-    command_buffer.endRenderPass();
     command_buffer.end();
 }
 
@@ -133,7 +123,8 @@ auto Renderer::submit(uint32_t image_index) -> void {
     auto& frame = frames_in_flight_.current();
 
     const auto wait_semaphore = *frame.image_available;
-    const vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    const vk::PipelineStageFlags wait_stage =
+        vk::PipelineStageFlagBits::eAllCommands;
     const auto command_buffer = *frame.primary_command_buffer;
     const auto signal_semaphore = *swapchain_.render_finished(image_index);
 
@@ -181,12 +172,6 @@ auto Renderer::present(uint32_t image_index) -> vk::Result {
 }
 
 auto Renderer::render(const Scene& scene) -> FrameResult {
-    if (!initialized_) {
-        throw std::logic_error(
-            "renderer must be initialized before rendering!"
-        );
-    }
-
     if (window_.should_close()) {
         return FrameResult::Skipped;
     }

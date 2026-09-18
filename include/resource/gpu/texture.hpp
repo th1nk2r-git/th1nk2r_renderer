@@ -32,12 +32,11 @@ public:
     }
 
     auto image_view() const noexcept -> const vk::raii::ImageView& {
-        return image_view_;
+        return image_.view();
     }
 
 private:
     Image image_;
-    vk::raii::ImageView image_view_ = nullptr;
 };
 
 #endif

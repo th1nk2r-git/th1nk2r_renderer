@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <vulkan/vulkan_raii.hpp>
@@ -80,11 +81,34 @@ public:
         BufferUsage usage
     ) -> void;
 
+    auto set_output(std::string_view resource) -> void;
+
     auto compile() -> void;
 
     auto record(vk::raii::CommandBuffer& primary_command_buffer) -> void;
 
 private:
+    struct ImageBarrierPlan {
+        std::string resource;
+        vk::PipelineStageFlags source_stage;
+        vk::PipelineStageFlags destination_stage;
+        vk::AccessFlags source_access;
+        vk::AccessFlags destination_access;
+        vk::ImageLayout old_layout;
+        vk::ImageLayout new_layout;
+        bool first_use = false;
+        bool require_initial_transition = false;
+    };
+
+    struct BufferBarrierPlan {
+        std::string resource;
+        vk::PipelineStageFlags source_stage;
+        vk::PipelineStageFlags destination_stage;
+        vk::AccessFlags source_access;
+        vk::AccessFlags destination_access;
+        bool first_use = false;
+    };
+
     ImageRegistry& images_;
     BufferRegistry& buffers_;
     ThreadPool& thread_pool_;
@@ -93,13 +117,15 @@ private:
     std::vector<std::string> node_order_;
     std::unordered_map<std::string, std::vector<std::string>> dependencies_;
     std::unordered_map<std::string, std::unordered_map<std::string, ImageUsage>> image_usages_;
+    std::unordered_map<std::string, std::vector<std::string>> image_usage_order_;
     std::unordered_map<std::string, std::unordered_map<std::string, BufferUsage>> buffer_usages_;
+    std::vector<std::string> outputs_;
 
     std::vector<std::string> execution_order_;
-    std::unordered_map<std::string, std::vector<vk::ImageMemoryBarrier>> image_barriers_;
-    std::unordered_map<std::string, std::vector<vk::BufferMemoryBarrier>> buffer_barriers_;
-    std::unordered_map<std::string, vk::PipelineStageFlags> source_stages_;
-    std::unordered_map<std::string, vk::PipelineStageFlags> destination_stages_;
+    std::unordered_map<std::string, std::vector<ImageBarrierPlan>> image_barriers_;
+    std::unordered_map<std::string, std::vector<BufferBarrierPlan>> buffer_barriers_;
+    std::vector<ImageBarrierPlan> final_image_barriers_;
+    std::unordered_set<uint64_t> initialized_images_;
 
     bool compiled_ = false;
     bool first_record_ = true;

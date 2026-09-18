@@ -11,8 +11,8 @@ class BufferRegistry {
 public:
     auto add(std::string name, Buffer buffer) -> void;
 
-    auto buffer(std::string_view name) -> Buffer&;
-    auto buffer(std::string_view name) const -> const Buffer&;
+    auto query(std::string_view name) -> Buffer&;
+    auto query(std::string_view name) const -> const Buffer&;
 
 private:
     std::unordered_map<std::string, Buffer> buffers_;

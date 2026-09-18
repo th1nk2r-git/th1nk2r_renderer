@@ -86,37 +86,34 @@ namespace {
         return extent;
     }
 
-    auto create_image_views(
+    auto create_images(
         const Device& device,
         const std::vector<vk::Image>& images,
-        vk::Format format
-    ) -> std::vector<vk::raii::ImageView> {
-        std::vector<vk::raii::ImageView> views;
-        views.reserve(images.size());
+        vk::Format format,
+        vk::Extent2D extent
+    ) -> std::vector<Image> {
+        std::vector<Image> resources;
+        resources.reserve(images.size());
         for (const auto image : images) {
-            vk::ImageViewCreateInfo create_info{};
-            create_info
-                .setImage(image)
-                .setViewType(vk::ImageViewType::e2D)
-                .setFormat(format)
-                .setComponents(vk::ComponentMapping{
-                    vk::ComponentSwizzle::eIdentity,
-                    vk::ComponentSwizzle::eIdentity,
-                    vk::ComponentSwizzle::eIdentity,
-                    vk::ComponentSwizzle::eIdentity
-                })
-                .setSubresourceRange(vk::ImageSubresourceRange{
-                    vk::ImageAspectFlagBits::eColor,
-                    0,
-                    1,
-                    0,
-                    1
-                });
-            views.emplace_back(
-                device.logical_device().createImageView(create_info)
+            resources.push_back(
+                Image::external(
+                    device,
+                    image,
+                    ImageDesc{
+                        .format = format,
+                        .extent = vk::Extent3D{
+                            extent.width,
+                            extent.height,
+                            1
+                        },
+                        .usage = vk::ImageUsageFlagBits::eColorAttachment,
+                        .initial_layout = vk::ImageLayout::eUndefined,
+                        .final_layout = vk::ImageLayout::ePresentSrcKHR
+                    }
+                )
             );
         }
-        return views;
+        return resources;
     }
 
     auto choose_depth_format(const Device& device) -> vk::Format {
@@ -138,87 +135,8 @@ namespace {
         );
     }
 
-    auto depth_aspect_flags(vk::Format format) -> vk::ImageAspectFlags {
-        vk::ImageAspectFlags flags = vk::ImageAspectFlagBits::eDepth;
-        if (format == vk::Format::eD32SfloatS8Uint ||
-            format == vk::Format::eD24UnormS8Uint) {
-            flags |= vk::ImageAspectFlagBits::eStencil;
-        }
-        return flags;
-    }
-
-    auto create_render_pass(
-        const Device& device,
-        vk::Format color_format,
-        vk::Format depth_format
-    ) -> vk::raii::RenderPass {
-        vk::AttachmentDescription color_attachment{};
-        color_attachment
-            .setFormat(color_format)
-            .setSamples(vk::SampleCountFlagBits::e1)
-            .setLoadOp(vk::AttachmentLoadOp::eClear)
-            .setStoreOp(vk::AttachmentStoreOp::eStore)
-            .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
-            .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-            .setInitialLayout(vk::ImageLayout::eUndefined)
-            .setFinalLayout(vk::ImageLayout::ePresentSrcKHR);
-
-        vk::AttachmentDescription depth_attachment{};
-        depth_attachment
-            .setFormat(depth_format)
-            .setSamples(vk::SampleCountFlagBits::e1)
-            .setLoadOp(vk::AttachmentLoadOp::eClear)
-            .setStoreOp(vk::AttachmentStoreOp::eDontCare)
-            .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
-            .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-            .setInitialLayout(vk::ImageLayout::eUndefined)
-            .setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
-
-        vk::AttachmentReference color_reference{};
-        color_reference
-            .setAttachment(0)
-            .setLayout(vk::ImageLayout::eColorAttachmentOptimal);
-        vk::AttachmentReference depth_reference{};
-        depth_reference
-            .setAttachment(1)
-            .setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
-
-        vk::SubpassDescription subpass{};
-        subpass
-            .setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
-            .setColorAttachments(color_reference)
-            .setPDepthStencilAttachment(&depth_reference);
-
-        const auto attachment_stages =
-            vk::PipelineStageFlagBits::eColorAttachmentOutput |
-            vk::PipelineStageFlagBits::eEarlyFragmentTests |
-            vk::PipelineStageFlagBits::eLateFragmentTests;
-        const auto attachment_writes =
-            vk::AccessFlagBits::eColorAttachmentWrite |
-            vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-
-        vk::SubpassDependency dependency{};
-        dependency
-            .setSrcSubpass(VK_SUBPASS_EXTERNAL)
-            .setDstSubpass(0)
-            .setSrcStageMask(attachment_stages)
-            .setSrcAccessMask(attachment_writes)
-            .setDstStageMask(attachment_stages)
-            .setDstAccessMask(
-                attachment_writes |
-                vk::AccessFlagBits::eDepthStencilAttachmentRead
-            );
-
-        const std::array attachments{color_attachment, depth_attachment};
-        vk::RenderPassCreateInfo create_info{};
-        create_info
-            .setAttachments(attachments)
-            .setSubpasses(subpass)
-            .setDependencies(dependency);
-        return device.logical_device().createRenderPass(create_info);
-    }
-
     auto create_depth_images(
+        const Device& device,
         const MemoryAllocator& allocator,
         size_t image_count,
         vk::Extent2D extent,
@@ -228,6 +146,7 @@ namespace {
         images.reserve(image_count);
         for (size_t index = 0; index < image_count; ++index) {
             images.emplace_back(
+                device,
                 allocator,
                 ImageDesc{
                     .format = format,
@@ -237,61 +156,6 @@ namespace {
             );
         }
         return images;
-    }
-
-    auto create_depth_image_views(
-        const Device& device,
-        const std::vector<Image>& images,
-        vk::Format format
-    ) -> std::vector<vk::raii::ImageView> {
-        std::vector<vk::raii::ImageView> views;
-        views.reserve(images.size());
-        for (const auto& image : images) {
-            vk::ImageViewCreateInfo create_info{};
-            create_info
-                .setImage(image.get())
-                .setViewType(vk::ImageViewType::e2D)
-                .setFormat(format)
-                .setSubresourceRange(vk::ImageSubresourceRange{
-                    depth_aspect_flags(format),
-                    0,
-                    1,
-                    0,
-                    1
-                });
-            views.emplace_back(
-                device.logical_device().createImageView(create_info)
-            );
-        }
-        return views;
-    }
-
-    auto create_framebuffers(
-        const Device& device,
-        const vk::raii::RenderPass& render_pass,
-        const std::vector<vk::raii::ImageView>& color_views,
-        const std::vector<vk::raii::ImageView>& depth_views,
-        vk::Extent2D extent
-    ) -> std::vector<vk::raii::Framebuffer> {
-        std::vector<vk::raii::Framebuffer> framebuffers;
-        framebuffers.reserve(color_views.size());
-        for (size_t index = 0; index < color_views.size(); ++index) {
-            const std::array attachments{
-                *color_views[index],
-                *depth_views[index]
-            };
-            vk::FramebufferCreateInfo create_info{};
-            create_info
-                .setRenderPass(*render_pass)
-                .setAttachments(attachments)
-                .setWidth(extent.width)
-                .setHeight(extent.height)
-                .setLayers(1);
-            framebuffers.emplace_back(
-                device.logical_device().createFramebuffer(create_info)
-            );
-        }
-        return framebuffers;
     }
 
     auto create_render_finished(
@@ -319,38 +183,24 @@ Swapchain::Swapchain(
 
 Swapchain::Swapchain(const DeviceContext& context, CreateState state)
     : handle_(std::move(state.handle)),
-      images_(std::move(state.images)),
-      image_views_(
-          create_image_views(context.device(), images_, state.format)
+      images_(
+          create_images(
+              context.device(),
+              state.images,
+              state.format,
+              state.extent
+          )
       ),
       image_format_(state.format),
       extent_(state.extent),
       depth_format_(choose_depth_format(context.device())),
-      render_pass_(
-          create_render_pass(context.device(), image_format_, depth_format_)
-      ),
       depth_images_(
           create_depth_images(
+              context.device(),
               context.allocator(),
               images_.size(),
               extent_,
               depth_format_
-          )
-      ),
-      depth_image_views_(
-          create_depth_image_views(
-              context.device(),
-              depth_images_,
-              depth_format_
-          )
-      ),
-      framebuffers_(
-          create_framebuffers(
-              context.device(),
-              render_pass_,
-              image_views_,
-              depth_image_views_,
-              extent_
           )
       ),
       render_finished_(

@@ -8,17 +8,22 @@
 #include <vector>
 
 namespace {
-    auto supports_shader_draw_parameters(
+    auto supports_required_vulkan_features(
         const vk::raii::PhysicalDevice& physical_device
     ) -> bool {
         VkPhysicalDeviceVulkan11Features vulkan11_features{};
         vulkan11_features.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        VkPhysicalDeviceVulkan13Features vulkan13_features{};
+        vulkan13_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        vulkan11_features.pNext = &vulkan13_features;
         VkPhysicalDeviceFeatures2 features{};
         features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         features.pNext = &vulkan11_features;
         vkGetPhysicalDeviceFeatures2(*physical_device, &features);
-        return vulkan11_features.shaderDrawParameters == VK_TRUE;
+        return vulkan11_features.shaderDrawParameters == VK_TRUE &&
+            vulkan13_features.dynamicRendering == VK_TRUE;
     }
 }
 
@@ -63,7 +68,7 @@ auto Device::select_physical_device(
         if (!physical_device.getFeatures().imageCubeArray) {
             continue;
         }
-        if (!supports_shader_draw_parameters(physical_device)) {
+        if (!supports_required_vulkan_features(physical_device)) {
             continue;
         }
         auto required_extensions = std::set<std::string>{
@@ -142,6 +147,9 @@ auto Device::create_logical_device(
     required_features.setImageCubeArray(true);
     vk::PhysicalDeviceVulkan11Features required_vulkan11_features{};
     required_vulkan11_features.setShaderDrawParameters(true);
+    vk::PhysicalDeviceVulkan13Features required_vulkan13_features{};
+    required_vulkan13_features.setDynamicRendering(true);
+    required_vulkan11_features.setPNext(&required_vulkan13_features);
 
     const vk::DeviceCreateInfo create_info{
         .pNext = &required_vulkan11_features,

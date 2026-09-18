@@ -14,7 +14,7 @@ struct Frame {
     Frame(Frame&&) noexcept = default;
     auto operator=(Frame&&) noexcept -> Frame& = default;
 
-    auto reset_primary() -> void;
+    auto reset() -> void;
 
     vk::raii::CommandPool primary_command_pool = nullptr;
     vk::raii::CommandBuffer primary_command_buffer = nullptr;

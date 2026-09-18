@@ -18,8 +18,12 @@ auto GraphicsPipelineFactory::create(
     if (desc.layout == nullptr) {
         throw std::invalid_argument("graphics pipeline requires a pipeline layout!");
     }
-    if (desc.render_pass == nullptr) {
-        throw std::invalid_argument("graphics pipeline requires a render pass!");
+    if (desc.color_attachment_formats.empty() &&
+        desc.depth_attachment_format == vk::Format::eUndefined &&
+        desc.stencil_attachment_format == vk::Format::eUndefined) {
+        throw std::invalid_argument(
+            "graphics pipeline requires at least one attachment format!"
+        );
     }
 
     std::array<vk::PipelineShaderStageCreateInfo, 2> shader_stages{};
@@ -92,7 +96,7 @@ auto GraphicsPipelineFactory::create(
         );
 
     const std::vector color_blend_attachments(
-        desc.color_attachment_count,
+        desc.color_attachment_formats.size(),
         color_blend_attachment
     );
     vk::PipelineColorBlendStateCreateInfo color_blend_state{};
@@ -108,8 +112,15 @@ auto GraphicsPipelineFactory::create(
     vk::PipelineDynamicStateCreateInfo dynamic_state{};
     dynamic_state.setDynamicStates(dynamic_states);
 
+    vk::PipelineRenderingCreateInfo rendering_info{};
+    rendering_info
+        .setColorAttachmentFormats(desc.color_attachment_formats)
+        .setDepthAttachmentFormat(desc.depth_attachment_format)
+        .setStencilAttachmentFormat(desc.stencil_attachment_format);
+
     vk::GraphicsPipelineCreateInfo create_info{};
     create_info
+        .setPNext(&rendering_info)
         .setStages(shader_stages)
         .setPVertexInputState(&vertex_input_state)
         .setPInputAssemblyState(&input_assembly_state)
@@ -119,9 +130,7 @@ auto GraphicsPipelineFactory::create(
         .setPDepthStencilState(&depth_stencil_state)
         .setPColorBlendState(&color_blend_state)
         .setPDynamicState(&dynamic_state)
-        .setLayout(**desc.layout)
-        .setRenderPass(**desc.render_pass)
-        .setSubpass(desc.subpass);
+        .setLayout(**desc.layout);
 
     auto handle = device.logical_device().createGraphicsPipeline(
         nullptr,

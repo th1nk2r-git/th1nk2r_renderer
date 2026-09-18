@@ -104,32 +104,6 @@ namespace {
                      vk::ImageUsageFlagBits::eSampled
         };
     }
-
-    auto create_image_view(
-        const Device& device,
-        const Image& image,
-        vk::Format format
-    ) -> vk::raii::ImageView {
-        vk::ImageViewCreateInfo create_info{};
-        create_info
-            .setImage(image.get())
-            .setViewType(vk::ImageViewType::e2D)
-            .setFormat(format)
-            .setComponents(vk::ComponentMapping{
-                vk::ComponentSwizzle::eIdentity,
-                vk::ComponentSwizzle::eIdentity,
-                vk::ComponentSwizzle::eIdentity,
-                vk::ComponentSwizzle::eIdentity
-            })
-            .setSubresourceRange(vk::ImageSubresourceRange{
-                vk::ImageAspectFlagBits::eColor,
-                0,
-                image.mip_levels(),
-                0,
-                1
-            });
-        return device.logical_device().createImageView(create_info);
-    }
 }
 
 Texture::Texture(
@@ -141,6 +115,7 @@ Texture::Texture(
     std::span<const std::byte> pixels,
     vk::Format format
 ) : image_(
+          device,
           allocator,
           create_image_desc(
               device,
@@ -149,8 +124,7 @@ Texture::Texture(
               pixels,
               format
           )
-      ),
-      image_view_(create_image_view(device, image_, format)) {
+      ) {
     ImageUploadDesc upload_desc{};
     upload_desc.extent = vk::Extent3D{width, height, 1};
     upload_desc.generate_mipmaps = image_.mip_levels() > 1;

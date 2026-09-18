@@ -10,12 +10,14 @@
 class ImageRegistry {
 public:
     auto add(std::string name, Image image) -> void;
+    auto bind_external(std::string name, Image& image) -> void;
 
-    auto image(std::string_view name) -> Image&;
-    auto image(std::string_view name) const -> const Image&;
+    auto query(std::string_view name) -> Image&;
+    auto query(std::string_view name) const -> const Image&;
 
 private:
     std::unordered_map<std::string, Image> images_;
+    std::unordered_map<std::string, Image*> external_images_;
 };
 
 #endif

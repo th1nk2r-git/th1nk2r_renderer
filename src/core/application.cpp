@@ -42,18 +42,6 @@ auto Application::setup_scene() -> void {
         registry_.query_model_id("sponza")
     );
     sponza.get_component<Transform>()->position() = glm::vec3{0, 10, 0};
-
-    scene_.add_point_light(
-        PointLight{
-            .position = glm::vec3{0.0F, 17.0F, 0.0F},
-            .color = glm::vec3{1.0F, 0.9F, 0.75F},
-            .intensity = 100.0F,
-            .casts_shadow = true,
-            .shadow_near = 0.1F,
-            .shadow_far = 200.0F,
-            .source_radius = 0.2F
-        }
-    );
 }
 
 auto Application::update(float delta_time) -> void {

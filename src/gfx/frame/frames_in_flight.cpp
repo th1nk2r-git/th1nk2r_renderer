@@ -55,7 +55,7 @@ Frame::Frame(const Device& device)
           })
       ) {}
 
-auto Frame::reset_primary() -> void {
+auto Frame::reset() -> void {
     primary_command_pool.reset();
 }
 
