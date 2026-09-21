@@ -6,10 +6,7 @@
 
 #include <vulkan/vulkan.hpp>
 
-class BufferRegistry;
 class Device;
-class FramesInFlight;
-class ImageRegistry;
 class RenderGraph;
 class Scene;
 
@@ -35,15 +32,11 @@ protected:
     RenderPass(
         std::string name,
         const Device& device,
-        FramesInFlight& frames_in_flight,
-        ImageRegistry& images,
-        BufferRegistry& buffers
+        RenderGraph& render_graph
     );
 
     const Device& device_;
-    FramesInFlight& frames_in_flight_;
-    ImageRegistry& images_;
-    BufferRegistry& buffers_;
+    RenderGraph& render_graph_;
 
 private:
     std::string name_;

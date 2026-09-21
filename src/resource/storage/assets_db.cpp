@@ -1,4 +1,4 @@
-#include "resource/registry/resource_registry.hpp"
+#include "resource/storage/assets_db.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -67,16 +67,16 @@ namespace {
     }
 }
 
-auto ResourceRegistry::add(std::unique_ptr<Texture> texture)
+auto AssetsDB::add(std::unique_ptr<Texture> texture)
     -> ResourceId<Texture> {
     return textures_.add(std::move(texture));
 }
 
-auto ResourceRegistry::add(std::unique_ptr<Material> material) -> ResourceId<Material> {
+auto AssetsDB::add(std::unique_ptr<Material> material) -> ResourceId<Material> {
     return materials_.add(std::move(material));
 }
 
-auto ResourceRegistry::add(MeshData data) -> ResourceId<Mesh> {
+auto AssetsDB::add(MeshData data) -> ResourceId<Mesh> {
     if (geometry_state_ != GeometryState::Collecting) {
         throw std::logic_error("cannot add meshes after geometry upload starts");
     }
@@ -94,7 +94,7 @@ auto ResourceRegistry::add(MeshData data) -> ResourceId<Mesh> {
     return id;
 }
 
-auto ResourceRegistry::upload_meshes(
+auto AssetsDB::upload_meshes(
     const MemoryAllocator& allocator,
     BufferUploader& uploader
 ) -> void {
@@ -124,8 +124,8 @@ auto ResourceRegistry::upload_meshes(
             .memory = BufferMemoryUsage::GpuOnly
         }
     };
-    vertex_buffer_ = std::move(vertex_buffer);
-    index_buffer_ = std::move(index_buffer);
+    global_vertex_buffer_ = std::move(vertex_buffer);
+    global_index_buffer_ = std::move(index_buffer);
     // Own the destination handles before enqueueing; retain them on failure.
     geometry_state_ = GeometryState::Enqueueing;
 
@@ -135,7 +135,7 @@ auto ResourceRegistry::upload_meshes(
         uploader.enqueue(
             data.vertices_.data(),
             buffer_size<Vertex>(mesh.vertex_count),
-            vertex_buffer_,
+            global_vertex_buffer_,
             BufferUploadDesc{
                 .destination_offset = buffer_size<Vertex>(mesh.vertex_offset),
                 .destination_stage = vk::PipelineStageFlagBits::eVertexInput,
@@ -145,7 +145,7 @@ auto ResourceRegistry::upload_meshes(
         uploader.enqueue(
             data.indices_.data(),
             buffer_size<uint32_t>(mesh.index_count),
-            index_buffer_,
+            global_index_buffer_,
             BufferUploadDesc{
                 .destination_offset = buffer_size<uint32_t>(mesh.first_index),
                 .destination_stage = vk::PipelineStageFlagBits::eVertexInput,
@@ -160,25 +160,25 @@ auto ResourceRegistry::upload_meshes(
     geometry_state_ = GeometryState::Enqueued;
 }
 
-auto ResourceRegistry::vertex_buffer() const -> const Buffer& {
+auto AssetsDB::vertex_buffer() const -> const Buffer& {
     if (geometry_state_ != GeometryState::Enqueued) {
         throw std::logic_error("geometry uploads must be enqueued before drawing");
     }
-    return vertex_buffer_;
+    return global_vertex_buffer_;
 }
 
-auto ResourceRegistry::index_buffer() const -> const Buffer& {
+auto AssetsDB::index_buffer() const -> const Buffer& {
     if (geometry_state_ != GeometryState::Enqueued) {
         throw std::logic_error("geometry uploads must be enqueued before drawing");
     }
-    return index_buffer_;
+    return global_index_buffer_;
 }
 
-auto ResourceRegistry::add(std::unique_ptr<Model> model) -> ResourceId<Model> {
+auto AssetsDB::add(std::unique_ptr<Model> model) -> ResourceId<Model> {
     return models_.add(std::move(model));
 }
 
-auto ResourceRegistry::set_model_name(ResourceId<Model> id, std::string name) -> void {
+auto AssetsDB::set_model_name(ResourceId<Model> id, std::string name) -> void {
     if (name.empty()) {
         throw std::invalid_argument("model name cannot be empty");
     }
@@ -208,23 +208,23 @@ auto ResourceRegistry::set_model_name(ResourceId<Model> id, std::string name) ->
     }
 }
 
-auto ResourceRegistry::query(ResourceId<Texture> id) const -> const Texture& {
+auto AssetsDB::query(ResourceId<Texture> id) const -> const Texture& {
     return textures_.query(id);
 }
 
-auto ResourceRegistry::query(ResourceId<Material> id) const -> const Material& {
+auto AssetsDB::query(ResourceId<Material> id) const -> const Material& {
     return materials_.query(id);
 }
 
-auto ResourceRegistry::query(ResourceId<Mesh> id) const -> const Mesh& {
+auto AssetsDB::query(ResourceId<Mesh> id) const -> const Mesh& {
     return meshes_.query(id);
 }
 
-auto ResourceRegistry::query(ResourceId<Model> id) const -> const Model& {
+auto AssetsDB::query(ResourceId<Model> id) const -> const Model& {
     return models_.query(id);
 }
 
-auto ResourceRegistry::query_model_id(std::string_view name) const
+auto AssetsDB::query_model_id(std::string_view name) const
     -> ResourceId<Model> {
     const auto name_entry = model_names_.find(std::string{name});
     if (name_entry == model_names_.end()) {
@@ -235,10 +235,10 @@ auto ResourceRegistry::query_model_id(std::string_view name) const
     return name_entry->second;
 }
 
-auto ResourceRegistry::query_model(std::string_view name) const -> const Model& {
+auto AssetsDB::query_model(std::string_view name) const -> const Model& {
     return query(query_model_id(name));
 }
 
-auto ResourceRegistry::contains_model(std::string_view name) const -> bool {
+auto AssetsDB::contains_model(std::string_view name) const -> bool {
     return model_names_.contains(std::string{name});
 }

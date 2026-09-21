@@ -6,13 +6,9 @@
 RenderPass::RenderPass(
     std::string name,
     const Device& device,
-    FramesInFlight& frames_in_flight,
-    ImageRegistry& images,
-    BufferRegistry& buffers
+    RenderGraph& render_graph
 ) : device_(device),
-    frames_in_flight_(frames_in_flight),
-    images_(images),
-    buffers_(buffers),
+    render_graph_(render_graph),
     name_(std::move(name)) {
     if (name_.empty()) {
         throw std::invalid_argument("render pass name cannot be empty!");

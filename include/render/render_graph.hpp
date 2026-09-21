@@ -14,6 +14,15 @@
 #include "render/buffer_registry.hpp"
 #include "render/image_registry.hpp"
 
+class Device;
+class FramesInFlight;
+class MemoryAllocator;
+
+enum class ResourceMultiplicity {
+    Single,
+    PerFrame
+};
+
 enum class ImageUsage {
     ColorAttachment,
     DepthAttachment,
@@ -49,8 +58,9 @@ struct RenderNode {
 class RenderGraph {
 public:
     RenderGraph(
-        ImageRegistry& images,
-        BufferRegistry& buffers,
+        const Device& device,
+        const MemoryAllocator& allocator,
+        const FramesInFlight& frames_in_flight,
         ThreadPool& thread_pool
     );
 
@@ -58,6 +68,33 @@ public:
     auto operator=(const RenderGraph&) -> RenderGraph& = delete;
     RenderGraph(RenderGraph&&) = delete;
     auto operator=(RenderGraph&&) -> RenderGraph& = delete;
+
+    auto create_image(
+        std::string name,
+        const ImageDesc& desc,
+        ResourceMultiplicity multiplicity = ResourceMultiplicity::Single
+    ) -> void;
+    auto bind_external_image(std::string name, Image& image) -> void;
+    auto image(std::string_view name) -> Image&;
+    auto image(std::string_view name) const -> const Image&;
+    auto image(std::string_view name, uint32_t instance) -> Image&;
+    auto image(std::string_view name, uint32_t instance) const -> const Image&;
+    auto image_instance_count(std::string_view name) const -> uint32_t;
+
+    auto create_buffer(
+        std::string name,
+        const BufferDesc& desc,
+        ResourceMultiplicity multiplicity = ResourceMultiplicity::Single
+    ) -> void;
+    auto bind_external_buffer(std::string name, Buffer& buffer) -> void;
+    auto buffer(std::string_view name) -> Buffer&;
+    auto buffer(std::string_view name) const -> const Buffer&;
+    auto buffer(std::string_view name, uint32_t instance) -> Buffer&;
+    auto buffer(std::string_view name, uint32_t instance) const -> const Buffer&;
+    auto buffer_instance_count(std::string_view name) const -> uint32_t;
+
+    auto current_frame_index() const noexcept -> uint32_t;
+    auto frames_in_flight_count() const noexcept -> uint32_t;
 
     auto create_node(
         std::string name,
@@ -84,6 +121,7 @@ public:
     auto set_output(std::string_view resource) -> void;
 
     auto compile() -> void;
+    auto reset() -> void;
 
     auto record(vk::raii::CommandBuffer& primary_command_buffer) -> void;
 
@@ -109,9 +147,25 @@ private:
         bool first_use = false;
     };
 
-    ImageRegistry& images_;
-    BufferRegistry& buffers_;
+    struct DeclaredImage {
+        ImageDesc desc;
+        ResourceMultiplicity multiplicity = ResourceMultiplicity::Single;
+    };
+
+    struct DeclaredBuffer {
+        BufferDesc desc;
+        ResourceMultiplicity multiplicity = ResourceMultiplicity::Single;
+    };
+
+    const Device& device_;
+    const MemoryAllocator& allocator_;
+    const FramesInFlight& frames_in_flight_;
     ThreadPool& thread_pool_;
+    ImageRegistry images_;
+    BufferRegistry buffers_;
+
+    std::unordered_map<std::string, DeclaredImage> declared_images_;
+    std::unordered_map<std::string, DeclaredBuffer> declared_buffers_;
 
     std::unordered_map<std::string, RenderNode> nodes_;
     std::vector<std::string> node_order_;
@@ -126,9 +180,18 @@ private:
     std::unordered_map<std::string, std::vector<BufferBarrierPlan>> buffer_barriers_;
     std::vector<ImageBarrierPlan> final_image_barriers_;
     std::unordered_set<uint64_t> initialized_images_;
+    std::unordered_set<const Buffer*> initialized_buffers_;
 
     bool compiled_ = false;
-    bool first_record_ = true;
+    bool resources_created_ = false;
+
+    auto create_declared_resources(
+        const std::unordered_map<std::string, vk::ImageUsageFlags>& image_flags,
+        const std::unordered_map<std::string, vk::BufferUsageFlags>& buffer_flags
+    ) -> void;
+
+    auto image_instance(std::string_view name) const -> uint32_t;
+    auto buffer_instance(std::string_view name) const -> uint32_t;
 };
 
 #endif

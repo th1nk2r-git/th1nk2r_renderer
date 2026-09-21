@@ -13,7 +13,7 @@
 class DeviceContext;
 class Material;
 class Model;
-class ResourceRegistry;
+class AssetsDB;
 class Texture;
 struct ImageData;
 struct ModelData;
@@ -32,7 +32,7 @@ class ModelImporter {
 public:
     ModelImporter(
         DeviceContext& device_context,
-        ResourceRegistry& registry
+        AssetsDB& assets
     );
 
     ModelImporter(const ModelImporter&) = delete;
@@ -41,7 +41,7 @@ public:
     auto operator=(ModelImporter&&) -> ModelImporter& = delete;
 
     // Imports store CPU geometry and enqueue texture uploads. After all imports,
-    // call registry.upload_meshes(), then submit uploads before rendering.
+    // call assets.upload_meshes(), then submit uploads before rendering.
     // The default name is the model's immediate parent directory name.
     auto import_model(
         const std::filesystem::path& path,
@@ -67,7 +67,7 @@ private:
     };
 
     DeviceContext& device_context_;
-    ResourceRegistry& registry_;
+    AssetsDB& assets_;
     std::unordered_map<std::string, TextureVariants> textures_;
     ResourceId<Texture> white_srgb_;
     ResourceId<Texture> white_unorm_;

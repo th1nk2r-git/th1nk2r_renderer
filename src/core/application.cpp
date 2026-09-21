@@ -10,12 +10,12 @@ Application::Application()
     : window_(1200, 800),
       device_context_(window_),
       input_system_(window_, scene_.camera()),
-      renderer_(device_context_, window_, registry_, thread_pool_) {}
+      renderer_(device_context_, window_, assets_, thread_pool_) {}
 
 auto Application::run() -> void {
-    ModelImporter importer{device_context_, registry_};
+    ModelImporter importer{device_context_, assets_};
     static_cast<void>(importer.import_models("./assets/models"));
-    registry_.upload_meshes(
+    assets_.upload_meshes(
         device_context_.allocator(), device_context_.buffer_uploader()
     );
     device_context_.buffer_uploader().submit_and_wait();
@@ -26,10 +26,13 @@ auto Application::run() -> void {
 }
 
 auto Application::setup_scene() -> void {
-    /*const auto config = TerrainConfig{.seed = std::random_device{}()};
+    /*
+    TerrainGenerator terrain_generator_;
+    const auto config = TerrainConfig{.seed = std::random_device{}()};
     terrain_generator_.generate(
-        scene_, registry_.query_model_id("rocky_soil_smooth"), config
-    );*/
+        scene_, assets_.query_model_id("rocky_soil_smooth"), config
+    );
+    */
     scene_.camera().set_position(glm::vec3{0.0F, 20.0F, 0.0F});
     scene_.camera().set_orientation(
         glm::quat{glm::vec3{glm::radians(-20.0F), 0.0F, 0.0F}}
@@ -39,7 +42,7 @@ auto Application::setup_scene() -> void {
     auto& sponza = scene_.create_entity();
     sponza.add_component<Transform>();
     sponza.add_component<MeshRenderer>(
-        registry_.query_model_id("sponza")
+        assets_.query_model_id("sponza")
     );
     sponza.get_component<Transform>()->position() = glm::vec3{0, 10, 0};
 }

@@ -1,5 +1,7 @@
 #include "render/render_graph.hpp"
 
+#include "gfx/frame/frames_in_flight.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -218,12 +220,180 @@ namespace {
 }
 
 RenderGraph::RenderGraph(
-    ImageRegistry& images,
-    BufferRegistry& buffers,
+    const Device& device,
+    const MemoryAllocator& allocator,
+    const FramesInFlight& frames_in_flight,
     ThreadPool& thread_pool
-) : images_(images),
-    buffers_(buffers),
+) : device_(device),
+    allocator_(allocator),
+    frames_in_flight_(frames_in_flight),
     thread_pool_(thread_pool) {}
+
+auto RenderGraph::create_image(
+    std::string name,
+    const ImageDesc& desc,
+    ResourceMultiplicity multiplicity
+) -> void {
+    if (name.empty()) {
+        throw std::invalid_argument("image name cannot be empty!");
+    }
+    if (resources_created_) {
+        throw std::logic_error(
+            "cannot declare images after render graph resources are created!"
+        );
+    }
+    if (images_.contains(name)) {
+        throw std::invalid_argument(
+            "an external image named '" + name + "' is already registered!"
+        );
+    }
+
+    const bool inserted = declared_images_.try_emplace(
+        name,
+        DeclaredImage{desc, multiplicity}
+    ).second;
+    if (!inserted) {
+        throw std::invalid_argument(
+            "an image named '" + name + "' is already declared!"
+        );
+    }
+    compiled_ = false;
+}
+
+auto RenderGraph::bind_external_image(
+    std::string name,
+    Image& image
+) -> void {
+    if (declared_images_.contains(name)) {
+        throw std::invalid_argument(
+            "an owned image named '" + name + "' is already declared!"
+        );
+    }
+    images_.bind_external(std::move(name), image);
+}
+
+auto RenderGraph::image(std::string_view name) -> Image& {
+    return images_.query(name, image_instance(name));
+}
+
+auto RenderGraph::image(std::string_view name) const -> const Image& {
+    return images_.query(name, image_instance(name));
+}
+
+auto RenderGraph::image(
+    std::string_view name,
+    uint32_t instance
+) -> Image& {
+    return images_.query(name, instance);
+}
+
+auto RenderGraph::image(
+    std::string_view name,
+    uint32_t instance
+) const -> const Image& {
+    return images_.query(name, instance);
+}
+
+auto RenderGraph::image_instance_count(std::string_view name) const
+    -> uint32_t {
+    return images_.instance_count(name);
+}
+
+auto RenderGraph::create_buffer(
+    std::string name,
+    const BufferDesc& desc,
+    ResourceMultiplicity multiplicity
+) -> void {
+    if (name.empty()) {
+        throw std::invalid_argument("buffer name cannot be empty!");
+    }
+    if (resources_created_) {
+        throw std::logic_error(
+            "cannot declare buffers after render graph resources are created!"
+        );
+    }
+    if (buffers_.contains(name)) {
+        throw std::invalid_argument(
+            "an external buffer named '" + name + "' is already registered!"
+        );
+    }
+
+    const bool inserted = declared_buffers_.try_emplace(
+        name,
+        DeclaredBuffer{desc, multiplicity}
+    ).second;
+    if (!inserted) {
+        throw std::invalid_argument(
+            "a buffer named '" + name + "' is already declared!"
+        );
+    }
+    compiled_ = false;
+}
+
+auto RenderGraph::bind_external_buffer(
+    std::string name,
+    Buffer& buffer
+) -> void {
+    if (declared_buffers_.contains(name)) {
+        throw std::invalid_argument(
+            "an owned buffer named '" + name + "' is already declared!"
+        );
+    }
+    buffers_.bind_external(std::move(name), buffer);
+}
+
+auto RenderGraph::buffer(std::string_view name) -> Buffer& {
+    return buffers_.query(name, buffer_instance(name));
+}
+
+auto RenderGraph::buffer(std::string_view name) const -> const Buffer& {
+    return buffers_.query(name, buffer_instance(name));
+}
+
+auto RenderGraph::buffer(
+    std::string_view name,
+    uint32_t instance
+) -> Buffer& {
+    return buffers_.query(name, instance);
+}
+
+auto RenderGraph::buffer(
+    std::string_view name,
+    uint32_t instance
+) const -> const Buffer& {
+    return buffers_.query(name, instance);
+}
+
+auto RenderGraph::buffer_instance_count(std::string_view name) const
+    -> uint32_t {
+    return buffers_.instance_count(name);
+}
+
+auto RenderGraph::current_frame_index() const noexcept -> uint32_t {
+    return frames_in_flight_.current_index();
+}
+
+auto RenderGraph::frames_in_flight_count() const noexcept -> uint32_t {
+    return frames_in_flight_.count();
+}
+
+auto RenderGraph::image_instance(std::string_view name) const -> uint32_t {
+    const auto iterator = declared_images_.find(std::string{name});
+    if (iterator == declared_images_.end() ||
+        iterator->second.multiplicity == ResourceMultiplicity::Single) {
+        return 0;
+    }
+    return frames_in_flight_.current_index();
+}
+
+auto RenderGraph::buffer_instance(std::string_view name) const -> uint32_t {
+    const auto iterator = declared_buffers_.find(std::string{name});
+    if (iterator == declared_buffers_.end() ||
+        iterator->second.multiplicity == ResourceMultiplicity::Single) {
+        return 0;
+    }
+    return frames_in_flight_.current_index();
+}
 
 auto RenderGraph::create_node(
     std::string name,
@@ -296,7 +466,6 @@ auto RenderGraph::set_image_usage(
         );
     }
 
-    static_cast<void>(images_.query(resource));
     const std::string resource_name{resource};
     auto& usages = image_usages_[node_name];
     if (!usages.contains(resource_name)) {
@@ -308,13 +477,6 @@ auto RenderGraph::set_image_usage(
 
 auto RenderGraph::set_output(std::string_view resource) -> void {
     const std::string resource_name{resource};
-    const auto& image = images_.query(resource_name);
-    if (image.final_layout() == vk::ImageLayout::eUndefined) {
-        throw std::invalid_argument(
-            "render graph output '" + resource_name +
-            "' requires a defined final layout!"
-        );
-    }
     if (std::find(outputs_.begin(), outputs_.end(), resource_name) ==
         outputs_.end()) {
         outputs_.push_back(resource_name);
@@ -334,12 +496,60 @@ auto RenderGraph::set_buffer_usage(
         );
     }
 
-    static_cast<void>(buffers_.query(resource));
     buffer_usages_[node_name].insert_or_assign(
         std::string{resource},
         usage
     );
     compiled_ = false;
+}
+
+auto RenderGraph::create_declared_resources(
+    const std::unordered_map<std::string, vk::ImageUsageFlags>& image_flags,
+    const std::unordered_map<std::string, vk::BufferUsageFlags>& buffer_flags
+) -> void {
+    if (resources_created_) {
+        return;
+    }
+
+    for (const auto& [name, declaration] : declared_images_) {
+        auto desc = declaration.desc;
+        if (const auto iterator = image_flags.find(name);
+            iterator != image_flags.end()) {
+            desc.usage |= iterator->second;
+        }
+
+        const uint32_t count =
+            declaration.multiplicity == ResourceMultiplicity::PerFrame
+            ? frames_in_flight_.count()
+            : 1;
+        std::vector<Image> instances;
+        instances.reserve(count);
+        for (uint32_t index = 0; index < count; ++index) {
+            instances.emplace_back(device_, allocator_, desc);
+        }
+        images_.add(name, std::move(instances));
+    }
+
+    for (const auto& [name, declaration] : declared_buffers_) {
+        auto desc = declaration.desc;
+        if (const auto iterator = buffer_flags.find(name);
+            iterator != buffer_flags.end()) {
+            desc.usage |= iterator->second;
+        }
+
+        const uint32_t count =
+            declaration.multiplicity == ResourceMultiplicity::PerFrame
+            ? frames_in_flight_.count()
+            : 1;
+        std::vector<Buffer> instances;
+        instances.reserve(count);
+        for (uint32_t index = 0; index < count; ++index) {
+            instances.emplace_back(allocator_, desc);
+        }
+        buffers_.add(name, std::move(instances));
+    }
+
+    resources_created_ = true;
 }
 
 auto RenderGraph::compile() -> void {
@@ -386,6 +596,49 @@ auto RenderGraph::compile() -> void {
         std::string,
         std::vector<std::pair<std::string, BufferUsage>>
     > buffer_sequences;
+
+    std::unordered_map<std::string, vk::ImageUsageFlags> image_flags;
+    std::unordered_map<std::string, vk::BufferUsageFlags> buffer_flags;
+
+    for (const auto& [node_name, usages] : image_usages_) {
+        for (const auto& [resource_name, usage] : usages) {
+            if (declared_images_.contains(resource_name)) {
+                image_flags[resource_name] |= required_image_flags(usage);
+                continue;
+            }
+            if (!images_.contains(resource_name)) {
+                throw std::logic_error(
+                    "render node '" + node_name +
+                    "' uses undeclared image '" + resource_name + "'!"
+                );
+            }
+        }
+    }
+
+    for (const auto& [node_name, usages] : buffer_usages_) {
+        for (const auto& [resource_name, usage] : usages) {
+            if (declared_buffers_.contains(resource_name)) {
+                buffer_flags[resource_name] |= required_buffer_flags(usage);
+                continue;
+            }
+            if (!buffers_.contains(resource_name)) {
+                throw std::logic_error(
+                    "render node '" + node_name +
+                    "' uses undeclared buffer '" + resource_name + "'!"
+                );
+            }
+        }
+    }
+
+    for (const auto& output : outputs_) {
+        if (!declared_images_.contains(output) && !images_.contains(output)) {
+            throw std::logic_error(
+                "render graph output '" + output + "' is undeclared!"
+            );
+        }
+    }
+
+    create_declared_resources(image_flags, buffer_flags);
 
     for (const auto& node_name : execution_order_) {
         if (const auto iterator = image_usages_.find(node_name);
@@ -443,7 +696,13 @@ auto RenderGraph::compile() -> void {
     }
 
     for (const auto& output : outputs_) {
-        static_cast<void>(images_.query(output));
+        const auto& image = images_.query(output);
+        if (image.final_layout() == vk::ImageLayout::eUndefined) {
+            throw std::logic_error(
+                "render graph output '" + output +
+                "' requires a defined final layout!"
+            );
+        }
         image_sequences.try_emplace(output);
     }
 
@@ -543,8 +802,34 @@ auto RenderGraph::compile() -> void {
     }
 
     initialized_images_.clear();
-    first_record_ = true;
+    initialized_buffers_.clear();
     compiled_ = true;
+}
+
+auto RenderGraph::reset() -> void {
+    images_.clear();
+    buffers_.clear();
+
+    declared_images_.clear();
+    declared_buffers_.clear();
+
+    nodes_.clear();
+    node_order_.clear();
+    dependencies_.clear();
+    image_usages_.clear();
+    image_usage_order_.clear();
+    buffer_usages_.clear();
+    outputs_.clear();
+
+    execution_order_.clear();
+    image_barriers_.clear();
+    buffer_barriers_.clear();
+    final_image_barriers_.clear();
+    initialized_images_.clear();
+    initialized_buffers_.clear();
+
+    compiled_ = false;
+    resources_created_ = false;
 }
 
 auto RenderGraph::record(vk::raii::CommandBuffer& primary_command_buffer) -> void {
@@ -593,7 +878,7 @@ auto RenderGraph::record(vk::raii::CommandBuffer& primary_command_buffer) -> voi
 
         image_barriers.reserve(image_plans.size());
         for (const auto& plan : image_plans) {
-            const auto& image = images_.query(plan.resource);
+            const auto& image = this->image(plan.resource);
             auto source_stage = plan.source_stage;
             auto source_access = plan.source_access;
             auto old_layout = plan.old_layout;
@@ -638,10 +923,12 @@ auto RenderGraph::record(vk::raii::CommandBuffer& primary_command_buffer) -> voi
 
         buffer_barriers.reserve(buffer_plans.size());
         for (const auto& plan : buffer_plans) {
-            if (first_record_ && plan.first_use) {
+            const auto& buffer = this->buffer(plan.resource);
+            if (plan.first_use &&
+                !initialized_buffers_.contains(&buffer)) {
+                initialized_buffers_.insert(&buffer);
                 continue;
             }
-            const auto& buffer = buffers_.query(plan.resource);
             buffer_barriers.push_back(
                 vk::BufferMemoryBarrier{}
                     .setSrcAccessMask(plan.source_access)
@@ -700,7 +987,7 @@ auto RenderGraph::record(vk::raii::CommandBuffer& primary_command_buffer) -> voi
                     continue;
                 }
 
-                const auto& image = images_.query(resource_name);
+                const auto& image = this->image(resource_name);
                 if (!image.has_view()) {
                     throw std::logic_error(
                         "attachment image '" + resource_name +
@@ -768,7 +1055,7 @@ auto RenderGraph::record(vk::raii::CommandBuffer& primary_command_buffer) -> voi
                 const auto& usages = image_usages_.at(node_name);
                 for (const auto& resource_name : image_usage_order_.at(node_name)) {
                     if (usages.at(resource_name) == ImageUsage::DepthAttachment &&
-                        has_stencil(images_.query(resource_name).format())) {
+                        has_stencil(this->image(resource_name).format())) {
                         rendering_info.setPStencilAttachment(&*depth_attachment);
                         break;
                     }
@@ -787,5 +1074,4 @@ auto RenderGraph::record(vk::raii::CommandBuffer& primary_command_buffer) -> voi
     static const std::vector<BufferBarrierPlan> no_buffer_plans;
     insert_barriers(final_image_barriers_, no_buffer_plans);
 
-    first_record_ = false;
 }

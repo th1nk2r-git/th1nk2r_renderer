@@ -18,7 +18,7 @@
 #include "resource/gpu/model.hpp"
 #include "resource/gpu/primitive.hpp"
 #include "resource/gpu/texture.hpp"
-#include "resource/registry/resource_registry.hpp"
+#include "resource/storage/assets_db.hpp"
 
 namespace {
     constexpr std::array white_texel{
@@ -39,9 +39,9 @@ namespace {
 
 ModelImporter::ModelImporter(
     DeviceContext& device_context,
-    ResourceRegistry& registry
+    AssetsDB& assets
 ) : device_context_(device_context),
-    registry_(registry) {
+    assets_(assets) {
     const auto register_texel = [this](const std::array<std::byte, 4>& texel, TextureEncoding encoding) {
         return register_texture(
             ImageData{
@@ -66,7 +66,7 @@ auto ModelImporter::register_texture(const ImageData& data, TextureEncoding enco
         );
     }
 
-    return registry_.add(
+    return assets_.add(
         std::make_unique<Texture>(
             device_context_.device(),
             device_context_.allocator(),
@@ -121,7 +121,7 @@ auto ModelImporter::import_model(
     if (name.empty()) {
         throw std::invalid_argument("model name cannot be empty");
     }
-    if (registry_.contains_model(name)) {
+    if (assets_.contains_model(name)) {
         throw std::invalid_argument(
             "model name is already registered: " + name
         );
@@ -152,7 +152,7 @@ auto ModelImporter::import_model(
         auto& material_id = material_ids[material_index];
         if (!material_id) {
             const auto& material_data = data.material_[material_index];
-            material_id = registry_.add(
+            material_id = assets_.add(
                 std::make_unique<Material>(
                     material_data,
                     MaterialTextures{
@@ -192,7 +192,7 @@ auto ModelImporter::import_model(
             result.materials.push_back(*material_id);
         }
 
-        const auto mesh_id = registry_.add(std::move(mesh_data));
+        const auto mesh_id = assets_.add(std::move(mesh_data));
         primitives.push_back(
             Primitive{
                 .mesh = mesh_id,
@@ -201,10 +201,10 @@ auto ModelImporter::import_model(
         );
     }
 
-    result.model = registry_.add(
+    result.model = assets_.add(
         std::make_unique<Model>(std::move(primitives))
     );
-    registry_.set_model_name(result.model, std::move(name));
+    assets_.set_model_name(result.model, std::move(name));
     return result;
 }
 

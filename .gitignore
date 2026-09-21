@@ -2,7 +2,9 @@
 .xmake/
 build/
 bin/
-.vscode/
+.vscode/*
+!.vscode/c_cpp_properties.json
+!.vscode/settings.json
 
 # MacOS Cache
 .DS_Store

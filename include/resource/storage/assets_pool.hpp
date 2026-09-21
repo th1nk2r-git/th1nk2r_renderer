@@ -1,5 +1,5 @@
-#ifndef RESOURCE_POOL_HPP
-#define RESOURCE_POOL_HPP
+#ifndef ASSETS_POOL_HPP
+#define ASSETS_POOL_HPP
 
 #include <cstddef>
 #include <cstdint>
@@ -11,14 +11,14 @@
 #include "resource/gpu/resource_id.hpp"
 
 template <typename T>
-class ResourcePool {
+class AssetsPool {
 public:
-    ResourcePool() = default;
+    AssetsPool() = default;
 
-    ResourcePool(const ResourcePool&) = delete;
-    auto operator=(const ResourcePool&) -> ResourcePool& = delete;
-    ResourcePool(ResourcePool&&) noexcept = default;
-    auto operator=(ResourcePool&&) noexcept -> ResourcePool& = default;
+    AssetsPool(const AssetsPool&) = delete;
+    auto operator=(const AssetsPool&) -> AssetsPool& = delete;
+    AssetsPool(AssetsPool&&) noexcept = default;
+    auto operator=(AssetsPool&&) noexcept -> AssetsPool& = default;
 
     auto add(std::unique_ptr<T> resource) -> ResourceId<T> {
         if (resource == nullptr) {

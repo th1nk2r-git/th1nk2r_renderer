@@ -7,7 +7,7 @@
 #include "gfx/device/device_context.hpp"
 #include "platform/window.hpp"
 #include "render/renderer.hpp"
-#include "resource/registry/resource_registry.hpp"
+#include "resource/storage/assets_db.hpp"
 #include "scene/scene.hpp"
 #include "scene/terrain_generator.hpp"
 
@@ -25,11 +25,10 @@ public:
 
 private:
     Scene scene_;
-    TerrainGenerator terrain_generator_;
 
     Window window_;
     DeviceContext device_context_;
-    ResourceRegistry registry_;
+    AssetsDB assets_;
     InputSystem input_system_;
     Timer timer_;
     ThreadPool thread_pool_{8};

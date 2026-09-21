@@ -1,0 +1,4 @@
+{
+    "xmake.autoGenerateCompileCommands": "onBuild",
+    "xmake.compileCommandsDirectory": ".vscode"
+}

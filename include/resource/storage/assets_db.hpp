@@ -1,5 +1,5 @@
-#ifndef RESOURCE_REGISTRY_HPP
-#define RESOURCE_REGISTRY_HPP
+#ifndef ASSETS_DB_HPP
+#define ASSETS_DB_HPP
 
 #include <memory>
 #include <string>
@@ -14,18 +14,18 @@
 #include "resource/gpu/model.hpp"
 #include "resource/gpu/resource_id.hpp"
 #include "resource/gpu/texture.hpp"
-#include "resource/registry/resource_pool.hpp"
+#include "resource/storage/assets_pool.hpp"
 
 class BufferUploader;
 
-class ResourceRegistry {
+class AssetsDB {
 public:
-    ResourceRegistry() = default;
+    AssetsDB() = default;
 
-    ResourceRegistry(const ResourceRegistry&) = delete;
-    auto operator=(const ResourceRegistry&) -> ResourceRegistry& = delete;
-    ResourceRegistry(ResourceRegistry&&) = delete;
-    auto operator=(ResourceRegistry&&) -> ResourceRegistry& = delete;
+    AssetsDB(const AssetsDB&) = delete;
+    auto operator=(const AssetsDB&) -> AssetsDB& = delete;
+    AssetsDB(AssetsDB&&) = delete;
+    auto operator=(AssetsDB&&) -> AssetsDB& = delete;
 
     auto add(std::unique_ptr<Texture> texture) -> ResourceId<Texture>;
     auto add(std::unique_ptr<Material> material) -> ResourceId<Material>;
@@ -53,10 +53,10 @@ public:
     auto contains_model(std::string_view name) const -> bool;
 
 private:
-    ResourcePool<Texture> textures_;
-    ResourcePool<Material> materials_;
-    ResourcePool<Mesh> meshes_;
-    ResourcePool<Model> models_;
+    AssetsPool<Texture> textures_;
+    AssetsPool<Material> materials_;
+    AssetsPool<Mesh> meshes_;
+    AssetsPool<Model> models_;
     std::unordered_map<std::string, ResourceId<Model>> model_names_;
 
     enum class GeometryState {
@@ -68,8 +68,8 @@ private:
     std::vector<MeshData> pending_mesh_data_;
     uint64_t vertex_count_ = 0;
     uint64_t index_count_ = 0;
-    Buffer vertex_buffer_;
-    Buffer index_buffer_;
+    Buffer global_vertex_buffer_;
+    Buffer global_index_buffer_;
     GeometryState geometry_state_ = GeometryState::Collecting;
 };
 

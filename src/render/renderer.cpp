@@ -4,27 +4,48 @@
 #include <stdexcept>
 #include <utility>
 
+#include "render/pass/geometry/geometry_pass.hpp"
+
 Renderer::Renderer(
     DeviceContext& device_context,
     Window& window,
-    const ResourceRegistry& resources,
+    const AssetsDB& assets,
     ThreadPool& thread_pool
 ) : device_context_(device_context),
     window_(window),
-    resources_(resources),
+    assets_(assets),
     swapchain_(device_context, window),
     frames_in_flight_(device_context.device()),
-    render_graph_(images_, buffers_, thread_pool) {
-    bind_swapchain_images(0);
-}
+    render_graph_(
+        device_context.device(),
+        device_context.allocator(),
+        frames_in_flight_,
+        thread_pool
+    ) {}
 
 auto Renderer::init() -> void {
     create_render_pass();
-    init_render_pass();
+    bind_swapchain_images(0);
+    create_render_resources();
     build_render_graph();
+    init_render_pass();
 }
 
 auto Renderer::create_render_pass() -> void {
+    render_passes_.push_back(std::make_unique<GeometryPass>(
+        device_context_.device(),
+        device_context_.allocator(),
+        render_graph_,
+        assets_
+    ));
+}
+
+auto Renderer::create_render_resources() -> void {
+    GeometryPass::declare_resources(
+        device_context_.device(),
+        render_graph_,
+        swapchain_.extent()
+    );
 }
 
 auto Renderer::init_render_pass() -> void {
@@ -53,11 +74,11 @@ auto Renderer::build_render_graph() -> void {
 }
 
 auto Renderer::bind_swapchain_images(uint32_t image_index) -> void {
-    images_.bind_external(
+    render_graph_.bind_external_image(
         "backbuffer",
         swapchain_.image(image_index)
     );
-    images_.bind_external(
+    render_graph_.bind_external_image(
         "depth",
         swapchain_.depth_image(image_index)
     );
@@ -95,8 +116,17 @@ auto Renderer::recreate_swapchain() -> void {
         window_,
         *swapchain_.handle()
     );
+
+    render_passes_.clear();
+    render_graph_.reset();
     swapchain_ = std::move(replacement);
+
+    create_render_pass();
     bind_swapchain_images(0);
+    create_render_resources();
+    build_render_graph();
+    init_render_pass();
+
     static_cast<void>(window_.consume_framebuffer_resized());
 }
 
@@ -123,8 +153,7 @@ auto Renderer::submit(uint32_t image_index) -> void {
     auto& frame = frames_in_flight_.current();
 
     const auto wait_semaphore = *frame.image_available;
-    const vk::PipelineStageFlags wait_stage =
-        vk::PipelineStageFlagBits::eAllCommands;
+    const vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eAllCommands;
     const auto command_buffer = *frame.primary_command_buffer;
     const auto signal_semaphore = *swapchain_.render_finished(image_index);
 

@@ -10,12 +10,10 @@
 #include "gfx/frame/frames_in_flight.hpp"
 #include "gfx/frame/swapchain.hpp"
 #include "platform/window.hpp"
-#include "render/buffer_registry.hpp"
-#include "render/image_registry.hpp"
 #include "render/pass/render_pass.hpp"
 #include "render/render_graph.hpp"
 
-class ResourceRegistry;
+class AssetsDB;
 class Scene;
 
 class Renderer {
@@ -28,7 +26,7 @@ public:
     Renderer(
         DeviceContext& device_context,
         Window& window,
-        const ResourceRegistry& resources,
+        const AssetsDB& assets,
         ThreadPool& thread_pool
     );
     ~Renderer() noexcept;
@@ -46,18 +44,17 @@ public:
 private:
     DeviceContext& device_context_;
     Window& window_;
-    const ResourceRegistry& resources_;
+    const AssetsDB& assets_;
     Swapchain swapchain_;
     FramesInFlight frames_in_flight_;
-    ImageRegistry images_;
-    BufferRegistry buffers_;
     RenderGraph render_graph_;
     std::vector<std::unique_ptr<RenderPass>> render_passes_;
 
     auto create_render_pass() -> void;
+    auto create_render_resources() -> void;
     auto init_render_pass() -> void;
-    auto build_render_graph() -> void;
     auto bind_swapchain_images(uint32_t image_index) -> void;
+    auto build_render_graph() -> void;
     auto recreate_swapchain() -> void;
     auto record_frame(const Scene& scene, uint32_t image_index) -> void;
     auto submit(uint32_t image_index) -> void;
