@@ -51,15 +51,18 @@ target("th1nk2r_renderer")
                 end
 
                 for _, file in ipairs(files) do
-                    local name = path.basename(file)
-                    local entry = "main"
-                    local output_file = path.join(output_dir, name .. ".spv")
+                    local source = io.readfile(file)
+                    if source and source:find("main%s*%(") then
+                        local name = path.basename(file)
+                        local entry = "main"
+                        local output_file = path.join(output_dir, name .. ".spv")
 
-                    local cmd = string.format(
-                        "slangc -target spirv -stage %s -entry %s -lang slang -o %s %s",
-                        stage, entry, output_file, file
-                    )
-                    os.run(cmd)
+                        local cmd = string.format(
+                            "slangc -target spirv -stage %s -entry %s -lang slang -o %s %s",
+                            stage, entry, output_file, file
+                        )
+                        os.run(cmd)
+                    end
                 end
             end
         end

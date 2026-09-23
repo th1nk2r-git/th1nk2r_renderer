@@ -39,6 +39,14 @@ auto Application::setup_scene() -> void {
     );
     scene_.camera().set_perspective(glm::radians(60.0F), 0.1F, 400.0F);
 
+    scene_.add_point_light(PointLight{
+        .position = glm::vec3{0.0F, 16.0F, 0.0F},
+        .range = 2000.0F,
+        .radiance = 1.0F,
+        .color = glm::vec3{1.0F},
+        .intensity = 80.0F
+    });
+
     auto& sponza = scene_.create_entity();
     sponza.add_component<Transform>();
     sponza.add_component<MeshRenderer>(

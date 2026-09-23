@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "render/pass/direct_light/direct_light_pass.hpp"
 #include "render/pass/geometry/geometry_pass.hpp"
 
 Renderer::Renderer(
@@ -38,6 +39,11 @@ auto Renderer::create_render_pass() -> void {
         render_graph_,
         assets_
     ));
+    render_passes_.push_back(std::make_unique<DirectLightPass>(
+        device_context_.device(),
+        device_context_.allocator(),
+        render_graph_
+    ));
 }
 
 auto Renderer::create_render_resources() -> void {
@@ -69,7 +75,7 @@ auto Renderer::build_render_graph() -> void {
         render_pass->configure(render_graph_);
     }
 
-    render_graph_.set_output("backbuffer");
+    render_graph_.set_output(DirectLightPass::output_resource);
     render_graph_.compile();
 }
 
