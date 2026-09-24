@@ -39,11 +39,13 @@ enum class BufferUsage {
     Vertex,
     Index,
     VertexUniform,
+    VertexStorageRead,
     FragmentUniform,
     FragmentStorageRead,
     FragmentStorageWrite,
     ComputeStorageRead,
     ComputeStorageWrite,
+    Indirect,
     TransferSource,
     TransferDestination
 };

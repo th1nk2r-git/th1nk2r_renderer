@@ -128,6 +128,8 @@ namespace {
             return vk::PipelineStageFlagBits::eVertexInput;
         case BufferUsage::VertexUniform:
             return vk::PipelineStageFlagBits::eVertexShader;
+        case BufferUsage::VertexStorageRead:
+            return vk::PipelineStageFlagBits::eVertexShader;
         case BufferUsage::FragmentUniform:
         case BufferUsage::FragmentStorageRead:
         case BufferUsage::FragmentStorageWrite:
@@ -135,6 +137,8 @@ namespace {
         case BufferUsage::ComputeStorageRead:
         case BufferUsage::ComputeStorageWrite:
             return vk::PipelineStageFlagBits::eComputeShader;
+        case BufferUsage::Indirect:
+            return vk::PipelineStageFlagBits::eDrawIndirect;
         case BufferUsage::TransferSource:
         case BufferUsage::TransferDestination:
             return vk::PipelineStageFlagBits::eTransfer;
@@ -151,6 +155,7 @@ namespace {
         case BufferUsage::VertexUniform:
         case BufferUsage::FragmentUniform:
             return vk::AccessFlagBits::eUniformRead;
+        case BufferUsage::VertexStorageRead:
         case BufferUsage::FragmentStorageRead:
         case BufferUsage::ComputeStorageRead:
             return vk::AccessFlagBits::eShaderRead;
@@ -158,6 +163,8 @@ namespace {
         case BufferUsage::ComputeStorageWrite:
             return vk::AccessFlagBits::eShaderRead |
                 vk::AccessFlagBits::eShaderWrite;
+        case BufferUsage::Indirect:
+            return vk::AccessFlagBits::eIndirectCommandRead;
         case BufferUsage::TransferSource:
             return vk::AccessFlagBits::eTransferRead;
         case BufferUsage::TransferDestination:
@@ -175,11 +182,14 @@ namespace {
         case BufferUsage::VertexUniform:
         case BufferUsage::FragmentUniform:
             return vk::BufferUsageFlagBits::eUniformBuffer;
+        case BufferUsage::VertexStorageRead:
         case BufferUsage::FragmentStorageRead:
         case BufferUsage::FragmentStorageWrite:
         case BufferUsage::ComputeStorageRead:
         case BufferUsage::ComputeStorageWrite:
             return vk::BufferUsageFlagBits::eStorageBuffer;
+        case BufferUsage::Indirect:
+            return vk::BufferUsageFlagBits::eIndirectBuffer;
         case BufferUsage::TransferSource:
             return vk::BufferUsageFlagBits::eTransferSrc;
         case BufferUsage::TransferDestination:

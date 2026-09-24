@@ -3,7 +3,7 @@
 
 #include "resource/gpu/resource_id.hpp"
 
-class Material;
+struct Material;
 struct Mesh;
 
 struct Primitive {

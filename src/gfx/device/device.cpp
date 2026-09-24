@@ -14,15 +14,26 @@ namespace {
         VkPhysicalDeviceVulkan11Features vulkan11_features{};
         vulkan11_features.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        VkPhysicalDeviceVulkan12Features vulkan12_features{};
+        vulkan12_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
         VkPhysicalDeviceVulkan13Features vulkan13_features{};
         vulkan13_features.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-        vulkan11_features.pNext = &vulkan13_features;
+        vulkan11_features.pNext = &vulkan12_features;
+        vulkan12_features.pNext = &vulkan13_features;
         VkPhysicalDeviceFeatures2 features{};
         features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         features.pNext = &vulkan11_features;
         vkGetPhysicalDeviceFeatures2(*physical_device, &features);
-        return vulkan11_features.shaderDrawParameters == VK_TRUE &&
+        return features.features.imageCubeArray == VK_TRUE &&
+            features.features.multiDrawIndirect == VK_TRUE &&
+            features.features.drawIndirectFirstInstance == VK_TRUE &&
+            features.features
+                .shaderSampledImageArrayDynamicIndexing == VK_TRUE &&
+            vulkan11_features.shaderDrawParameters == VK_TRUE &&
+            vulkan12_features.drawIndirectCount == VK_TRUE &&
+            vulkan12_features.runtimeDescriptorArray == VK_TRUE &&
             vulkan13_features.dynamicRendering == VK_TRUE;
     }
 }
@@ -63,9 +74,6 @@ auto Device::select_physical_device(
         const auto available_formats = physical_device.getSurfaceFormatsKHR(*surface);
         const auto available_present_modes = physical_device.getSurfacePresentModesKHR(*surface);
         if (available_formats.empty() || available_present_modes.empty()) {
-            continue;
-        }
-        if (!physical_device.getFeatures().imageCubeArray) {
             continue;
         }
         if (!supports_required_vulkan_features(physical_device)) {
@@ -144,12 +152,21 @@ auto Device::create_logical_device(
     };
 
     vk::PhysicalDeviceFeatures required_features{};
-    required_features.setImageCubeArray(true);
+    required_features
+        .setImageCubeArray(true)
+        .setMultiDrawIndirect(true)
+        .setDrawIndirectFirstInstance(true)
+        .setShaderSampledImageArrayDynamicIndexing(true);
     vk::PhysicalDeviceVulkan11Features required_vulkan11_features{};
     required_vulkan11_features.setShaderDrawParameters(true);
+    vk::PhysicalDeviceVulkan12Features required_vulkan12_features{};
+    required_vulkan12_features
+        .setDrawIndirectCount(true)
+        .setRuntimeDescriptorArray(true);
     vk::PhysicalDeviceVulkan13Features required_vulkan13_features{};
     required_vulkan13_features.setDynamicRendering(true);
-    required_vulkan11_features.setPNext(&required_vulkan13_features);
+    required_vulkan11_features.setPNext(&required_vulkan12_features);
+    required_vulkan12_features.setPNext(&required_vulkan13_features);
 
     const vk::DeviceCreateInfo create_info{
         .pNext = &required_vulkan11_features,

@@ -8,6 +8,8 @@ struct GeometryFragmentInput
     float3 world_normal;
     [[vk::location(3)]]
     float4 world_tangent;
+    [[vk::location(4)]]
+    nointerpolation uint material_index;
 };
 
 struct GeometryFragmentOutput
@@ -38,28 +40,25 @@ struct GeometryMaterial
 
     // X: non-zero when alpha masking is enabled.
     uint4 flags;
+
+    uint base_color_texture_index;
+    uint metallic_roughness_texture_index;
+    uint normal_texture_index;
+    uint occlusion_texture_index;
+    uint emissive_texture_index;
+    uint padding_0;
+    uint padding_1;
+    uint padding_2;
 };
 
 [[vk::binding(0, 1)]]
-SamplerState material_sampler;
+StructuredBuffer<GeometryMaterial> materials;
 
 [[vk::binding(1, 1)]]
-Texture2D<float4> base_color_texture;
+SamplerState material_sampler;
 
 [[vk::binding(2, 1)]]
-Texture2D<float4> metallic_roughness_texture;
-
-[[vk::binding(3, 1)]]
-Texture2D<float4> normal_texture;
-
-[[vk::binding(4, 1)]]
-Texture2D<float4> occlusion_texture;
-
-[[vk::binding(5, 1)]]
-Texture2D<float4> emissive_texture;
-
-[[vk::binding(6, 1)]]
-ConstantBuffer<GeometryMaterial> material;
+Texture2D<float4> material_textures[];
 
 float2 sign_not_zero(float2 value)
 {
@@ -83,10 +82,10 @@ float2 encode_octahedral(float3 normal)
 
 GeometryFragmentOutput main(GeometryFragmentInput input)
 {
-    float4 base_color = base_color_texture.Sample(
-        material_sampler,
-        input.texcoord
-    ) * material.base_color_factor;
+    const GeometryMaterial material = materials[input.material_index];
+    float4 base_color = material_textures[
+        material.base_color_texture_index
+    ].Sample(material_sampler, input.texcoord) * material.base_color_factor;
 
     base_color.rgb *= input.color;
     const bool alpha_mask_enabled = material.flags.x != 0;
@@ -98,10 +97,9 @@ GeometryFragmentOutput main(GeometryFragmentInput input)
 
     GeometryFragmentOutput output;
     // calculate base_color_ao
-    const float sampled_ao = occlusion_texture.Sample(
-        material_sampler,
-        input.texcoord
-    ).r;
+    const float sampled_ao = material_textures[
+        material.occlusion_texture_index
+    ].Sample(material_sampler, input.texcoord).r;
     const float ao_strength = material.metallic_roughness_occlusion_alpha_cutoff.z;
     const float ao = lerp(1.0, sampled_ao, ao_strength);
     output.base_color_ao = float4(base_color.rgb, ao);
@@ -111,10 +109,9 @@ GeometryFragmentOutput main(GeometryFragmentInput input)
     float3 T = input.world_tangent.xyz;
     T = normalize(T - N * dot(N, T));
     float3 B = normalize(cross(N, T)) * input.world_tangent.w;
-    float3 tangent_normal = normal_texture.Sample(
-        material_sampler,
-        input.texcoord
-    ).xyz;
+    float3 tangent_normal = material_textures[
+        material.normal_texture_index
+    ].Sample(material_sampler, input.texcoord).xyz;
     tangent_normal = tangent_normal * 2.0 - 1.0;
     float normal_scale = material.emissive_normal_scale.w;
     tangent_normal.xy *= normal_scale;
@@ -125,10 +122,9 @@ GeometryFragmentOutput main(GeometryFragmentInput input)
         N * tangent_normal.z
     );
     float2 encoded_normal = encode_octahedral(world_normal);
-    float4 mr_sample = metallic_roughness_texture.Sample(
-        material_sampler,
-        input.texcoord
-    );
+    float4 mr_sample = material_textures[
+        material.metallic_roughness_texture_index
+    ].Sample(material_sampler, input.texcoord);
     float roughness = saturate(
         mr_sample.g *
         material.metallic_roughness_occlusion_alpha_cutoff.y
@@ -144,9 +140,9 @@ GeometryFragmentOutput main(GeometryFragmentInput input)
     );
 
     // calculate emissive
-    output.emissive = emissive_texture.Sample(
-        material_sampler,
-        input.texcoord
-    ).rgb * material.emissive_normal_scale.xyz;
+    output.emissive = material_textures[
+        material.emissive_texture_index
+    ].Sample(material_sampler, input.texcoord).rgb *
+        material.emissive_normal_scale.xyz;
     return output;
 }

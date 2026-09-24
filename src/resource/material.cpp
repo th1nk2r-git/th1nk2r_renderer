@@ -49,15 +49,38 @@ namespace {
     }
 }
 
-Material::Material(
+auto make_gpu_material(
     const MaterialData& data,
     MaterialTextures textures
-) : textures_(checked_textures(textures)),
-    base_color_factor_(unit_color(data.base_color_)),
-    metallic_(unit_value(data.metallic_, 0.0F)),
-    roughness_(unit_value(data.roughness_, 1.0F)),
-    emissive_color_(sanitized_emissive_color(data.emissive_color_)),
-    normal_scale_(finite_or(data.normal_scale_, 1.0F)),
-    occlusion_strength_(unit_value(data.occlusion_strength_, 1.0F)),
-    alpha_mask_(data.alpha_mask_),
-    alpha_cutoff_(unit_value(data.alpha_cutoff_, 0.5F)) {}
+) -> GpuMaterial {
+    textures = checked_textures(textures);
+    const auto base_color = unit_color(data.base_color_);
+    const auto emissive = sanitized_emissive_color(data.emissive_color_);
+
+    return {
+        .base_color_factor = base_color,
+        .emissive_normal_scale = {
+            emissive[0],
+            emissive[1],
+            emissive[2],
+            finite_or(data.normal_scale_, 1.0F)
+        },
+        .metallic_roughness_occlusion_alpha_cutoff = {
+            unit_value(data.metallic_, 0.0F),
+            unit_value(data.roughness_, 1.0F),
+            unit_value(data.occlusion_strength_, 1.0F),
+            unit_value(data.alpha_cutoff_, 0.5F)
+        },
+        .flags = {
+            data.alpha_mask_ ? 1U : 0U,
+            0U,
+            0U,
+            0U
+        },
+        .base_color_texture_index = textures.base_color.value(),
+        .metallic_roughness_texture_index = textures.metallic_roughness.value(),
+        .normal_texture_index = textures.normal.value(),
+        .occlusion_texture_index = textures.occlusion.value(),
+        .emissive_texture_index = textures.emissive.value()
+    };
+}

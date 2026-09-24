@@ -153,41 +153,39 @@ auto ModelImporter::import_model(
         if (!material_id) {
             const auto& material_data = data.material_[material_index];
             material_id = assets_.add(
-                std::make_unique<Material>(
-                    material_data,
-                    MaterialTextures{
-                        .base_color = resolve_texture(
-                            data,
-                            material_data.base_color_texture_,
-                            TextureEncoding::Srgb,
-                            FallbackTexture::White
-                        ),
-                        .metallic_roughness = resolve_texture(
-                            data,
-                            material_data.metallic_roughness_texture_,
-                            TextureEncoding::Unorm,
-                            FallbackTexture::White
-                        ),
-                        .normal = resolve_texture(
-                            data,
-                            material_data.normal_texture_,
-                            TextureEncoding::Unorm,
-                            FallbackTexture::FlatNormal
-                        ),
-                        .occlusion = resolve_texture(
-                            data,
-                            material_data.occlusion_texture_,
-                            TextureEncoding::Unorm,
-                            FallbackTexture::White
-                        ),
-                        .emissive = resolve_texture(
-                            data,
-                            material_data.emissive_texture_,
-                            TextureEncoding::Srgb,
-                            FallbackTexture::White
-                        )
-                    }
-                )
+                material_data,
+                MaterialTextures{
+                    .base_color = resolve_texture(
+                        data,
+                        material_data.base_color_texture_,
+                        TextureEncoding::Srgb,
+                        FallbackTexture::White
+                    ),
+                    .metallic_roughness = resolve_texture(
+                        data,
+                        material_data.metallic_roughness_texture_,
+                        TextureEncoding::Unorm,
+                        FallbackTexture::White
+                    ),
+                    .normal = resolve_texture(
+                        data,
+                        material_data.normal_texture_,
+                        TextureEncoding::Unorm,
+                        FallbackTexture::FlatNormal
+                    ),
+                    .occlusion = resolve_texture(
+                        data,
+                        material_data.occlusion_texture_,
+                        TextureEncoding::Unorm,
+                        FallbackTexture::White
+                    ),
+                    .emissive = resolve_texture(
+                        data,
+                        material_data.emissive_texture_,
+                        TextureEncoding::Srgb,
+                        FallbackTexture::White
+                    )
+                }
             );
             result.materials.push_back(*material_id);
         }

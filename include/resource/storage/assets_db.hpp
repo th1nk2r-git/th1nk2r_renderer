@@ -28,15 +28,25 @@ public:
     auto operator=(AssetsDB&&) -> AssetsDB& = delete;
 
     auto add(std::unique_ptr<Texture> texture) -> ResourceId<Texture>;
-    auto add(std::unique_ptr<Material> material) -> ResourceId<Material>;
+    // Stores CPU material data and assigns its global-buffer index without
+    // creating the material buffer.
+    auto add(
+        const MaterialData& data,
+        MaterialTextures textures
+    ) -> ResourceId<Material>;
     // Stores CPU geometry and assigns a range without creating GPU buffers.
     auto add(MeshData data) -> ResourceId<Mesh>;
     auto add(std::unique_ptr<Model> model) -> ResourceId<Model>;
 
-    // Call once after importing all meshes, then submit uploads before drawing.
-    auto upload_meshes(const MemoryAllocator& allocator, BufferUploader& uploader) -> void;
+    // Call once after importing all assets, then submit uploads before drawing.
+    // Creates and fills the shared vertex, index, and material buffers.
+    auto upload(
+        const MemoryAllocator& allocator,
+        BufferUploader& uploader
+    ) -> void;
     auto vertex_buffer() const -> const Buffer&;
     auto index_buffer() const -> const Buffer&;
+    auto material_buffer() const -> const Buffer&;
 
     auto query(ResourceId<Texture> id) const -> const Texture&;
     auto query(ResourceId<Material> id) const -> const Material&;
@@ -45,6 +55,10 @@ public:
 
     auto material_count() const noexcept -> std::size_t {
         return materials_.size();
+    }
+
+    auto texture_count() const noexcept -> std::size_t {
+        return textures_.size();
     }
 
     auto set_model_name(ResourceId<Model> id, std::string name) -> void;
@@ -59,18 +73,25 @@ private:
     AssetsPool<Model> models_;
     std::unordered_map<std::string, ResourceId<Model>> model_names_;
 
-    enum class GeometryState {
+    enum class UploadState {
         Collecting,
         Enqueueing,
         Enqueued
     };
 
+    struct PendingMaterialData {
+        MaterialData data;
+        MaterialTextures textures;
+    };
+
     std::vector<MeshData> pending_mesh_data_;
+    std::vector<PendingMaterialData> pending_material_data_;
     uint64_t vertex_count_ = 0;
     uint64_t index_count_ = 0;
     Buffer global_vertex_buffer_;
     Buffer global_index_buffer_;
-    GeometryState geometry_state_ = GeometryState::Collecting;
+    Buffer global_material_buffer_;
+    UploadState upload_state_ = UploadState::Collecting;
 };
 
 #endif

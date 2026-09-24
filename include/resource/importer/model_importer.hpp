@@ -11,7 +11,7 @@
 #include "resource/gpu/resource_id.hpp"
 
 class DeviceContext;
-class Material;
+struct Material;
 class Model;
 class AssetsDB;
 class Texture;
@@ -40,8 +40,9 @@ public:
     ModelImporter(ModelImporter&&) = delete;
     auto operator=(ModelImporter&&) -> ModelImporter& = delete;
 
-    // Imports store CPU geometry and enqueue texture uploads. After all imports,
-    // call assets.upload_meshes(), then submit uploads before rendering.
+    // Imports store CPU geometry/material data and enqueue texture uploads.
+    // After all imports, call assets.upload(), then submit uploads before
+    // rendering.
     // The default name is the model's immediate parent directory name.
     auto import_model(
         const std::filesystem::path& path,

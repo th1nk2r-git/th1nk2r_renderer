@@ -27,7 +27,7 @@
 - 使用暂存 Buffer 批量上传顶点、索引和图像数据，并为 2D 纹理自动生成完整 Mipmap 链。
 - `AssetsDB` 统一持有所有 Mesh 的大顶点、索引 Buffer；`Mesh` 是记录元素偏移、数量和模型空间 AABB 的范围结构体，索引保持局部编号。
 - CPU 导入数据、GPU 资源对象与 `AssetsDB` 分层管理，通过类型安全 `ResourceId` 引用资源。
-- `ModelImporter` 负责模型目录扫描与资源注册，并在同一导入器实例内缓存纹理及其 sRGB/UNORM 变体；导入时将 CPU MeshData 移入资产库，应用在全部导入后调用 `AssetsDB::upload_meshes()` 创建共享几何 Buffer，再调用 `Renderer::prepare_resources()` 完成上传和材质绑定初始化。
+- `ModelImporter` 负责模型目录扫描与资源注册，并在同一导入器实例内缓存纹理及其 sRGB/UNORM 变体；导入时将 CPU MeshData 与材质数据移入资产库，应用在全部导入后调用 `AssetsDB::upload()` 创建共享几何 Buffer 和全局材质 Storage Buffer。
 - `Scene` 持有相机、实体和点光源；`Entity` 按类型管理 `Component`，通过 `Transform` 表达变换，通过 `MeshRenderer` 引用模型。阴影和前向 Pass 只绘制同时具有这两个组件的实体。
 - `Model` 保存 `Primitive` 列表，每个 Primitive 分别引用网格与材质 ID，资源对象由注册表持有；自由飞行相机由输入系统驱动。
 - `TerrainGenerator` 保存固定 128×128 高度图，通过带 seed 的四层平滑 Value Noise 生成整数柱高，只为有外露面的方块创建实体，并共享传入的模型资源。
@@ -137,7 +137,7 @@ flowchart LR
 1. `Application` 创建场景、GLFW 窗口、设备上下文、`AssetsDB`、输入系统、Timer 和八工作线程池；设备上下文创建 Vulkan 实例、Surface、物理/逻辑设备、VMA 和上传器。
 2. `Renderer` 引用应用的线程池，并创建 Swapchain、帧同步与命令录制资源、阴影 Pass 和前向 Pass。
 3. `Application` 调用 `ModelImporter` 递归扫描 `assets/models/`，导入并注册模型、材质与纹理。
-4. `AssetsDB::upload_meshes()` 按总数据量创建大 VB/IB，逐 Mesh 排队上传至对应字节偏移并释放 CPU 几何数据；`Renderer::prepare_resources()` 提交暂存上传、生成纹理 Mipmap，并初始化两个 Pass 的材质绑定。
+4. `AssetsDB::upload()` 按总数据量创建大 VB/IB 和全局材质 Storage Buffer，排队上传后释放暂存的 CPU Mesh 与材质数据；随后提交 Buffer/Image 上传并初始化渲染 Pass。
 5. 加载 HDR 环境图，通过 `Renderer::set_environment()` 使用 Compute Shader 生成 IBL 所需的 Cubemap 与查找表。
 6. 使用 `rocky_soil_smooth` 模型生成 128×128 方块地形，设置俯视相机和点光源；默认关闭该点光源的阴影，进入主循环前重置 Timer。
 
@@ -281,9 +281,9 @@ Pop-Location
 - 名称与扫描根目录、上层目录和模型文件名无关；直接放在扫描根目录中的模型使用该根目录的文件夹名。
 - 不同模型必须拥有唯一注册名。同一文件夹中的多个模型，或不同位置的同名文件夹会产生重名，导入器会报错；建议每个模型放在名称唯一的独立目录中。
 
-`ModelImporter::import_model()` 支持导入单个模型，默认同样使用模型所在文件夹的名字，也可以传入显式名称。两个导入接口暂存 CPU 几何数据、登记 Mesh 范围并排队上传纹理；几何数据登记时不会创建 GPU Buffer。全部模型导入完成后，应用先调用 `assets_.upload_meshes(device_context_.allocator(), device_context_.buffer_uploader())`，再调用 `Renderer::prepare_resources()` 提交上传并初始化材质绑定。
+`ModelImporter::import_model()` 支持导入单个模型，默认同样使用模型所在文件夹的名字，也可以传入显式名称。两个导入接口暂存 CPU 几何与材质数据、登记 Mesh 范围和 Material Buffer 索引，并排队上传纹理；登记时不会创建共享 GPU Buffer。全部模型导入完成后，应用调用 `assets_.upload(device_context_.allocator(), device_context_.buffer_uploader())`，再提交 Buffer/Image 上传并初始化渲染 Pass。
 
-共享几何缓冲区只构建一次，开始排队上传后禁止继续添加 Mesh，重复构建会抛出异常。Mesh 的 `vertex_offset`、`first_index` 分别以顶点、索引为单位，绘制时作为 `drawIndexed()` 参数使用；上传时才换算为字节偏移。当前仍逐 Mesh 绘制，共享缓冲区本身不减少 draw call 数量。
+共享几何缓冲区只构建一次，开始排队上传后禁止继续添加 Mesh，重复构建会抛出异常。Mesh 的 `vertex_offset`、`first_index` 分别以顶点、索引为单位；上传时才换算为字节偏移。每帧由 Culling Compute Shader 为每个 Mesh 实例执行一次 AABB 视锥测试，可见实例通过原子计数追加 `VkDrawIndexedIndirectCommand`，Geometry Pass 随后使用 `drawIndexedIndirectCount()` 提交可见集合。
 
 不启动窗口或 Vulkan 设备的 Mesh 范围、Bounds 和资源 ID 检查：
 

@@ -2,6 +2,8 @@
 #define MATERIAL_HPP
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 
 #include "resource/cpu/material.hpp"
 #include "resource/gpu/resource_id.hpp"
@@ -16,77 +18,47 @@ struct MaterialTextures {
     ResourceId<Texture> emissive;
 };
 
-class Material {
-public:
-    Material(
-        const MaterialData& data,
-        MaterialTextures textures
-    );
-
-    auto base_color_texture_id() const noexcept -> ResourceId<Texture> {
-        return textures_.base_color;
-    }
-
-    auto metallic_roughness_texture_id() const noexcept
-        -> ResourceId<Texture> {
-        return textures_.metallic_roughness;
-    }
-
-    auto normal_texture_id() const noexcept -> ResourceId<Texture> {
-        return textures_.normal;
-    }
-
-    auto occlusion_texture_id() const noexcept -> ResourceId<Texture> {
-        return textures_.occlusion;
-    }
-
-    auto emissive_texture_id() const noexcept -> ResourceId<Texture> {
-        return textures_.emissive;
-    }
-
-    auto base_color_factor() const noexcept
-        -> const std::array<float, 4>& {
-        return base_color_factor_;
-    }
-
-    auto metallic() const noexcept -> float {
-        return metallic_;
-    }
-
-    auto roughness() const noexcept -> float {
-        return roughness_;
-    }
-
-    auto emissive_color() const noexcept -> const std::array<float, 3>& {
-        return emissive_color_;
-    }
-
-    auto normal_scale() const noexcept -> float {
-        return normal_scale_;
-    }
-
-    auto occlusion_strength() const noexcept -> float {
-        return occlusion_strength_;
-    }
-
-    auto alpha_mask() const noexcept -> bool {
-        return alpha_mask_;
-    }
-
-    auto alpha_cutoff() const noexcept -> float {
-        return alpha_cutoff_;
-    }
-
-private:
-    MaterialTextures textures_;
-    std::array<float, 4> base_color_factor_{};
-    float metallic_ = 0.0F;
-    float roughness_ = 1.0F;
-    std::array<float, 3> emissive_color_{};
-    float normal_scale_ = 1.0F;
-    float occlusion_strength_ = 1.0F;
-    bool alpha_mask_ = false;
-    float alpha_cutoff_ = 0.5F;
+// Packed element stored in AssetsDB's global material storage buffer.
+// Keep this layout synchronized with GeometryMaterial in the shader.
+struct alignas(16) GpuMaterial {
+    std::array<float, 4> base_color_factor{};
+    std::array<float, 4> emissive_normal_scale{};
+    std::array<float, 4> metallic_roughness_occlusion_alpha_cutoff{};
+    std::array<uint32_t, 4> flags{};
+    // Each index is ResourceId<Texture>::value(). Descriptor arrays that
+    // consume GpuMaterial must place that texture in the same array slot.
+    uint32_t base_color_texture_index = 0;
+    uint32_t metallic_roughness_texture_index = 0;
+    uint32_t normal_texture_index = 0;
+    uint32_t occlusion_texture_index = 0;
+    uint32_t emissive_texture_index = 0;
+    uint32_t padding_0 = 0;
+    uint32_t padding_1 = 0;
+    uint32_t padding_2 = 0;
 };
+
+static_assert(sizeof(GpuMaterial) == 96);
+static_assert(alignof(GpuMaterial) == 16);
+static_assert(offsetof(GpuMaterial, base_color_factor) == 0);
+static_assert(offsetof(GpuMaterial, emissive_normal_scale) == 16);
+static_assert(
+    offsetof(GpuMaterial, metallic_roughness_occlusion_alpha_cutoff) == 32
+);
+static_assert(offsetof(GpuMaterial, flags) == 48);
+static_assert(offsetof(GpuMaterial, base_color_texture_index) == 64);
+static_assert(offsetof(GpuMaterial, metallic_roughness_texture_index) == 68);
+static_assert(offsetof(GpuMaterial, normal_texture_index) == 72);
+static_assert(offsetof(GpuMaterial, occlusion_texture_index) == 76);
+static_assert(offsetof(GpuMaterial, emissive_texture_index) == 80);
+
+// Like Mesh, Material only describes data stored in global GPU resources.
+struct Material {
+    uint32_t buffer_index = 0;
+};
+
+auto make_gpu_material(
+    const MaterialData& data,
+    MaterialTextures textures
+) -> GpuMaterial;
 
 #endif

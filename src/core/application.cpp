@@ -15,7 +15,7 @@ Application::Application()
 auto Application::run() -> void {
     ModelImporter importer{device_context_, assets_};
     static_cast<void>(importer.import_models("./assets/models"));
-    assets_.upload_meshes(
+    assets_.upload(
         device_context_.allocator(), device_context_.buffer_uploader()
     );
     device_context_.buffer_uploader().submit_and_wait();

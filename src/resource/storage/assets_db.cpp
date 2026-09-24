@@ -72,13 +72,55 @@ auto AssetsDB::add(std::unique_ptr<Texture> texture)
     return textures_.add(std::move(texture));
 }
 
-auto AssetsDB::add(std::unique_ptr<Material> material) -> ResourceId<Material> {
-    return materials_.add(std::move(material));
+auto AssetsDB::add(
+    const MaterialData& data,
+    MaterialTextures textures
+) -> ResourceId<Material> {
+    if (upload_state_ != UploadState::Collecting) {
+        throw std::logic_error(
+            "cannot add materials after resource upload starts"
+        );
+    }
+
+    // Validate that every resolved texture id belongs to this database.
+    static_cast<void>(textures_.query(textures.base_color));
+    static_cast<void>(textures_.query(textures.metallic_roughness));
+    static_cast<void>(textures_.query(textures.normal));
+    static_cast<void>(textures_.query(textures.occlusion));
+    static_cast<void>(textures_.query(textures.emissive));
+
+    if (pending_material_data_.size() >= ResourceId<Material>::invalid_value) {
+        throw std::length_error("material resource ids are exhausted");
+    }
+    const auto buffer_index =
+        static_cast<uint32_t>(pending_material_data_.size());
+    pending_material_data_.push_back(PendingMaterialData{
+        .data = data,
+        .textures = textures
+    });
+
+    ResourceId<Material> id;
+    try {
+        id = materials_.add(std::make_unique<Material>(Material{
+            .buffer_index = buffer_index
+        }));
+    }
+    catch (...) {
+        pending_material_data_.pop_back();
+        throw;
+    }
+
+    if (id.value() != buffer_index) {
+        throw std::logic_error(
+            "material resource id does not match its GPU buffer index"
+        );
+    }
+    return id;
 }
 
 auto AssetsDB::add(MeshData data) -> ResourceId<Mesh> {
-    if (geometry_state_ != GeometryState::Collecting) {
-        throw std::logic_error("cannot add meshes after geometry upload starts");
+    if (upload_state_ != UploadState::Collecting) {
+        throw std::logic_error("cannot add meshes after resource upload starts");
     }
     const auto mesh = make_mesh(data, vertex_count_, index_count_);
     pending_mesh_data_.push_back(std::move(data));
@@ -94,40 +136,62 @@ auto AssetsDB::add(MeshData data) -> ResourceId<Mesh> {
     return id;
 }
 
-auto AssetsDB::upload_meshes(
+auto AssetsDB::upload(
     const MemoryAllocator& allocator,
     BufferUploader& uploader
 ) -> void {
-    if (geometry_state_ != GeometryState::Collecting) {
-        throw std::logic_error("mesh uploads can only be enqueued once");
+    if (upload_state_ != UploadState::Collecting) {
+        throw std::logic_error("resource uploads can only be enqueued once");
     }
-    if (pending_mesh_data_.empty()) {
-        geometry_state_ = GeometryState::Enqueued;
+    if (pending_mesh_data_.empty() && pending_material_data_.empty()) {
+        upload_state_ = UploadState::Enqueued;
         return;
     }
 
-    auto vertex_buffer = Buffer{
-        allocator,
-        BufferDesc{
-            .size = buffer_size<Vertex>(vertex_count_),
-            .usage = vk::BufferUsageFlagBits::eVertexBuffer |
-                     vk::BufferUsageFlagBits::eTransferDst,
-            .memory = BufferMemoryUsage::GpuOnly
-        }
-    };
-    auto index_buffer = Buffer{
-        allocator,
-        BufferDesc{
-            .size = buffer_size<uint32_t>(index_count_),
-            .usage = vk::BufferUsageFlagBits::eIndexBuffer |
-                     vk::BufferUsageFlagBits::eTransferDst,
-            .memory = BufferMemoryUsage::GpuOnly
-        }
-    };
-    global_vertex_buffer_ = std::move(vertex_buffer);
-    global_index_buffer_ = std::move(index_buffer);
+    std::vector<GpuMaterial> material_data;
+    material_data.reserve(pending_material_data_.size());
+    for (const auto& pending : pending_material_data_) {
+        material_data.push_back(make_gpu_material(
+            pending.data,
+            pending.textures
+        ));
+    }
+
+    if (!pending_mesh_data_.empty()) {
+        global_vertex_buffer_ = Buffer{
+            allocator,
+            BufferDesc{
+                .size = buffer_size<Vertex>(vertex_count_),
+                .usage = vk::BufferUsageFlagBits::eVertexBuffer |
+                         vk::BufferUsageFlagBits::eTransferDst,
+                .memory = BufferMemoryUsage::GpuOnly
+            }
+        };
+        global_index_buffer_ = Buffer{
+            allocator,
+            BufferDesc{
+                .size = buffer_size<uint32_t>(index_count_),
+                .usage = vk::BufferUsageFlagBits::eIndexBuffer |
+                         vk::BufferUsageFlagBits::eTransferDst,
+                .memory = BufferMemoryUsage::GpuOnly
+            }
+        };
+    }
+    if (!pending_material_data_.empty()) {
+        global_material_buffer_ = Buffer{
+            allocator,
+            BufferDesc{
+                .size = buffer_size<GpuMaterial>(
+                    material_data.size()
+                ),
+                .usage = vk::BufferUsageFlagBits::eStorageBuffer |
+                         vk::BufferUsageFlagBits::eTransferDst,
+                .memory = BufferMemoryUsage::GpuOnly
+            }
+        };
+    }
     // Own the destination handles before enqueueing; retain them on failure.
-    geometry_state_ = GeometryState::Enqueueing;
+    upload_state_ = UploadState::Enqueueing;
 
     for (size_t i = 0; i < pending_mesh_data_.size(); ++i) {
         auto& data = pending_mesh_data_[i];
@@ -157,21 +221,47 @@ auto AssetsDB::upload_meshes(
     }
     // enqueue() copies source data into staging buffers immediately.
     std::vector<MeshData>{}.swap(pending_mesh_data_);
-    geometry_state_ = GeometryState::Enqueued;
+
+    if (!material_data.empty()) {
+        uploader.enqueue(
+            material_data.data(),
+            buffer_size<GpuMaterial>(material_data.size()),
+            global_material_buffer_,
+            BufferUploadDesc{
+                .destination_stage =
+                    vk::PipelineStageFlagBits::eFragmentShader,
+                .destination_access = vk::AccessFlagBits::eShaderRead
+            }
+        );
+    }
+    std::vector<PendingMaterialData>{}.swap(pending_material_data_);
+    upload_state_ = UploadState::Enqueued;
 }
 
 auto AssetsDB::vertex_buffer() const -> const Buffer& {
-    if (geometry_state_ != GeometryState::Enqueued) {
-        throw std::logic_error("geometry uploads must be enqueued before drawing");
+    if (upload_state_ != UploadState::Enqueued) {
+        throw std::logic_error("resource uploads must be enqueued before drawing");
     }
     return global_vertex_buffer_;
 }
 
 auto AssetsDB::index_buffer() const -> const Buffer& {
-    if (geometry_state_ != GeometryState::Enqueued) {
-        throw std::logic_error("geometry uploads must be enqueued before drawing");
+    if (upload_state_ != UploadState::Enqueued) {
+        throw std::logic_error("resource uploads must be enqueued before drawing");
     }
     return global_index_buffer_;
+}
+
+auto AssetsDB::material_buffer() const -> const Buffer& {
+    if (upload_state_ != UploadState::Enqueued) {
+        throw std::logic_error(
+            "resource uploads must be enqueued before accessing materials"
+        );
+    }
+    if (!global_material_buffer_.get()) {
+        throw std::logic_error("the asset database contains no materials");
+    }
+    return global_material_buffer_;
 }
 
 auto AssetsDB::add(std::unique_ptr<Model> model) -> ResourceId<Model> {
