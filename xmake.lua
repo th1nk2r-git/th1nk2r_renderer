@@ -14,6 +14,42 @@ add_requires(
     "assimp 6.0.4"
 )
 
+rule("shader.spirv")
+    set_extensions(".slang")
+
+    on_buildcmd_file(function (target, batchcmds, sourcefile, opt)
+        local stage = path.filename(path.directory(sourcefile))
+        assert(
+            stage == "vertex" or
+            stage == "fragment" or
+            stage == "compute",
+            "shader must be placed in shaders/vertex, shaders/fragment, or shaders/compute"
+        )
+
+        local output_file = path.join(
+            target:targetdir(),
+            "spv",
+            path.basename(sourcefile) .. ".spv"
+        )
+        batchcmds:show_progress(
+            opt.progress,
+            "${color.build.object}compiling.shader %s",
+            sourcefile
+        )
+        batchcmds:mkdir(path.directory(output_file))
+        batchcmds:vrunv("slangc", {
+            "-target", "spirv",
+            "-stage", stage,
+            "-entry", "main",
+            "-lang", "slang",
+            "-o", output_file,
+            sourcefile
+        })
+        batchcmds:add_depfiles(sourcefile)
+        batchcmds:set_depmtime(os.mtime(output_file))
+        batchcmds:set_depcache(target:dependfile(output_file))
+    end)
+
 target("th1nk2r_renderer")
     set_kind("binary")
     set_targetdir("bin")
@@ -23,6 +59,7 @@ target("th1nk2r_renderer")
         "GLM_FORCE_DEPTH_ZERO_TO_ONE"
     )
     add_files("src/**.cpp")
+    add_files("shaders/**.slang", {rule = "shader.spirv"})
     add_includedirs("./include")
     add_packages(
         "vulkansdk",
@@ -34,39 +71,6 @@ target("th1nk2r_renderer")
     )
 
     after_build(function (target)
-        local shader_dir = os.projectdir() .. "/shaders"
-        local output_dir = os.projectdir() .. "/bin/spv"
-        os.mkdir(output_dir)
-
-        local stages = {"vertex", "fragment", "compute"}
-        for _, stage in ipairs(stages) do
-            local stage_dir = path.join(shader_dir, stage)
-            if os.exists(stage_dir) then
-                local files = {}
-                for _, ext in ipairs({".hlsl", ".slang"}) do
-                    local list = os.files(path.join(stage_dir, "*" .. ext))
-                    for _, f in ipairs(list) do
-                        table.insert(files, f)
-                    end
-                end
-
-                for _, file in ipairs(files) do
-                    local source = io.readfile(file)
-                    if source and source:find("main%s*%(") then
-                        local name = path.basename(file)
-                        local entry = "main"
-                        local output_file = path.join(output_dir, name .. ".spv")
-
-                        local cmd = string.format(
-                            "slangc -target spirv -stage %s -entry %s -lang slang -o %s %s",
-                            stage, entry, output_file, file
-                        )
-                        os.run(cmd)
-                    end
-                end
-            end
-        end
-
         local asset_dir = path.join(os.projectdir(), "assets")
         if os.isdir(asset_dir) then
             os.cp(asset_dir, target:targetdir())

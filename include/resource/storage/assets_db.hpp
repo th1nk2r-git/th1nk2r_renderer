@@ -9,6 +9,7 @@
 
 #include "gfx/resource/buffer.hpp"
 #include "resource/cpu/mesh.hpp"
+#include "resource/gpu/blas.hpp"
 #include "resource/gpu/material.hpp"
 #include "resource/gpu/mesh.hpp"
 #include "resource/gpu/model.hpp"
@@ -17,6 +18,7 @@
 #include "resource/storage/assets_pool.hpp"
 
 class BufferUploader;
+class Device;
 
 class AssetsDB {
 public:
@@ -44,6 +46,10 @@ public:
         const MemoryAllocator& allocator,
         BufferUploader& uploader
     ) -> void;
+    auto build_blas(
+        const Device& device,
+        const MemoryAllocator& allocator
+    ) -> void;
     auto vertex_buffer() const -> const Buffer&;
     auto index_buffer() const -> const Buffer&;
     auto material_buffer() const -> const Buffer&;
@@ -51,6 +57,7 @@ public:
     auto query(ResourceId<Texture> id) const -> const Texture&;
     auto query(ResourceId<Material> id) const -> const Material&;
     auto query(ResourceId<Mesh> id) const -> const Mesh&;
+    auto query(ResourceId<Blas> id) const -> const Blas&;
     auto query(ResourceId<Model> id) const -> const Model&;
 
     auto material_count() const noexcept -> std::size_t {
@@ -70,6 +77,7 @@ private:
     AssetsPool<Texture> textures_;
     AssetsPool<Material> materials_;
     AssetsPool<Mesh> meshes_;
+    AssetsPool<Blas> blases_;
     AssetsPool<Model> models_;
     std::unordered_map<std::string, ResourceId<Model>> model_names_;
 

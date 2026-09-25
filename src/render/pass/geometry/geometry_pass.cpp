@@ -300,6 +300,10 @@ namespace {
 
     auto create_material_sampler(const Device& device)
         -> vk::raii::Sampler {
+        const auto max_anisotropy = device.physical_device()
+            .getProperties()
+            .limits
+            .maxSamplerAnisotropy;
         vk::SamplerCreateInfo create_info{};
         create_info
             .setMagFilter(vk::Filter::eLinear)
@@ -308,8 +312,8 @@ namespace {
             .setAddressModeU(vk::SamplerAddressMode::eRepeat)
             .setAddressModeV(vk::SamplerAddressMode::eRepeat)
             .setAddressModeW(vk::SamplerAddressMode::eRepeat)
-            .setAnisotropyEnable(false)
-            .setMaxAnisotropy(1.0F)
+            .setAnisotropyEnable(true)
+            .setMaxAnisotropy(max_anisotropy)
             .setCompareEnable(false)
             .setMinLod(0.0F)
             .setMaxLod(std::numeric_limits<float>::max())

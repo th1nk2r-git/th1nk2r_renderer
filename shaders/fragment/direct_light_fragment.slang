@@ -57,6 +57,9 @@ Texture2D<float4> emissive_texture;
 [[vk::binding(5, 0)]]
 Texture2D<float> depth_texture;
 
+[[vk::binding(6, 0)]]
+RaytracingAccelerationStructure scene_tlas;
+
 static const float PI = 3.14159265358979323846;
 static const float DIELECTRIC_F0 = 0.04;
 
@@ -173,6 +176,33 @@ float point_light_attenuation(float distance_squared, float distance_to_light, f
     return range_falloff / max(distance_squared, 1e-4);
 }
 
+bool visible_to_light(float3 world_position, float3 normal, float3 light_direction, float distance_to_light)
+{
+    static const float RAY_BIAS = 0.01;
+    if (distance_to_light <= RAY_BIAS * 2.0)
+    {
+        return true;
+    }
+
+    RayDesc ray;
+    ray.Origin = world_position + normal * RAY_BIAS;
+    ray.Direction = light_direction;
+    ray.TMin = RAY_BIAS;
+    ray.TMax = distance_to_light - RAY_BIAS;
+
+    RayQuery<
+        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
+        RAY_FLAG_FORCE_OPAQUE
+    > query;
+    query.TraceRayInline(scene_tlas, RAY_FLAG_NONE, 0xFF, ray);
+    while (query.Proceed())
+    {
+        
+    }
+
+    return query.CommittedStatus() == COMMITTED_NOTHING;
+}
+
 // ------------------------------------------------------------
 // Cook-Torrance metallic/roughness BRDF
 //
@@ -278,6 +308,11 @@ DirectLightFragmentOutput main(DirectLightFragmentInput input)
             float n_dot_l = saturate(dot(normal, light_direction));
 
             if (n_dot_l <= 0.0)
+            {
+                continue;
+            }
+
+            if (!visible_to_light(world_position, normal, light_direction, distance_to_light))
             {
                 continue;
             }

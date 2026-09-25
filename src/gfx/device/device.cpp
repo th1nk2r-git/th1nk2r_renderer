@@ -20,13 +20,23 @@ namespace {
         VkPhysicalDeviceVulkan13Features vulkan13_features{};
         vulkan13_features.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        VkPhysicalDeviceAccelerationStructureFeaturesKHR
+            acceleration_structure_features{};
+        acceleration_structure_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+        VkPhysicalDeviceRayQueryFeaturesKHR ray_query_features{};
+        ray_query_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
         vulkan11_features.pNext = &vulkan12_features;
         vulkan12_features.pNext = &vulkan13_features;
+        vulkan13_features.pNext = &acceleration_structure_features;
+        acceleration_structure_features.pNext = &ray_query_features;
         VkPhysicalDeviceFeatures2 features{};
         features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         features.pNext = &vulkan11_features;
         vkGetPhysicalDeviceFeatures2(*physical_device, &features);
         return features.features.imageCubeArray == VK_TRUE &&
+            features.features.samplerAnisotropy == VK_TRUE &&
             features.features.multiDrawIndirect == VK_TRUE &&
             features.features.drawIndirectFirstInstance == VK_TRUE &&
             features.features
@@ -34,7 +44,10 @@ namespace {
             vulkan11_features.shaderDrawParameters == VK_TRUE &&
             vulkan12_features.drawIndirectCount == VK_TRUE &&
             vulkan12_features.runtimeDescriptorArray == VK_TRUE &&
-            vulkan13_features.dynamicRendering == VK_TRUE;
+            vulkan12_features.bufferDeviceAddress == VK_TRUE &&
+            vulkan13_features.dynamicRendering == VK_TRUE &&
+            acceleration_structure_features.accelerationStructure == VK_TRUE &&
+            ray_query_features.rayQuery == VK_TRUE;
     }
 }
 
@@ -80,7 +93,10 @@ auto Device::select_physical_device(
             continue;
         }
         auto required_extensions = std::set<std::string>{
-            VK_KHR_SWAPCHAIN_EXTENSION_NAME
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+            VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+            VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+            VK_KHR_RAY_QUERY_EXTENSION_NAME
         };
         for (const auto& extension : physical_device.enumerateDeviceExtensionProperties()) {
             required_extensions.erase(extension.extensionName);
@@ -148,12 +164,16 @@ auto Device::create_logical_device(
     }
 
     const std::vector<const char*> required_device_extensions {
-        vk::KHRSwapchainExtensionName
+        vk::KHRSwapchainExtensionName,
+        vk::KHRAccelerationStructureExtensionName,
+        vk::KHRDeferredHostOperationsExtensionName,
+        vk::KHRRayQueryExtensionName
     };
 
     vk::PhysicalDeviceFeatures required_features{};
     required_features
         .setImageCubeArray(true)
+        .setSamplerAnisotropy(true)
         .setMultiDrawIndirect(true)
         .setDrawIndirectFirstInstance(true)
         .setShaderSampledImageArrayDynamicIndexing(true);
@@ -162,11 +182,23 @@ auto Device::create_logical_device(
     vk::PhysicalDeviceVulkan12Features required_vulkan12_features{};
     required_vulkan12_features
         .setDrawIndirectCount(true)
-        .setRuntimeDescriptorArray(true);
+        .setRuntimeDescriptorArray(true)
+        .setBufferDeviceAddress(true);
     vk::PhysicalDeviceVulkan13Features required_vulkan13_features{};
     required_vulkan13_features.setDynamicRendering(true);
+    vk::PhysicalDeviceAccelerationStructureFeaturesKHR
+        required_acceleration_structure_features{};
+    required_acceleration_structure_features.setAccelerationStructure(true);
+    vk::PhysicalDeviceRayQueryFeaturesKHR required_ray_query_features{};
+    required_ray_query_features.setRayQuery(true);
     required_vulkan11_features.setPNext(&required_vulkan12_features);
     required_vulkan12_features.setPNext(&required_vulkan13_features);
+    required_vulkan13_features.setPNext(
+        &required_acceleration_structure_features
+    );
+    required_acceleration_structure_features.setPNext(
+        &required_ray_query_features
+    );
 
     const vk::DeviceCreateInfo create_info{
         .pNext = &required_vulkan11_features,

@@ -15,6 +15,7 @@ auto create_allocator(
     create_info.physicalDevice = static_cast<VkPhysicalDevice>(*device.physical_device());
     create_info.device = static_cast<VkDevice>(*device.logical_device());
     create_info.vulkanApiVersion = VK_API_VERSION_1_4;
+    create_info.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
     VmaAllocator handle = nullptr;
     const VkResult result = vmaCreateAllocator(

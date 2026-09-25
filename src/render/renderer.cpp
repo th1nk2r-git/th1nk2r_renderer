@@ -7,6 +7,7 @@
 #include "render/pass/culling/culling_pass.hpp"
 #include "render/pass/direct_light/direct_light_pass.hpp"
 #include "render/pass/geometry/geometry_pass.hpp"
+#include "render/pass/tlas_build/tlas_build_pass.hpp"
 
 Renderer::Renderer(
     DeviceContext& device_context,
@@ -34,6 +35,14 @@ auto Renderer::init() -> void {
 }
 
 auto Renderer::create_render_pass() -> void {
+    auto tlas_build_pass = std::make_unique<TlasBuildPass>(
+        device_context_.device(),
+        device_context_.allocator(),
+        render_graph_,
+        assets_
+    );
+    const auto& tlas_build_pass_reference = *tlas_build_pass;
+    render_passes_.push_back(std::move(tlas_build_pass));
     render_passes_.push_back(std::make_unique<CullingPass>(
         device_context_.device(),
         render_graph_,
@@ -48,7 +57,8 @@ auto Renderer::create_render_pass() -> void {
     render_passes_.push_back(std::make_unique<DirectLightPass>(
         device_context_.device(),
         device_context_.allocator(),
-        render_graph_
+        render_graph_,
+        tlas_build_pass_reference
     ));
 }
 

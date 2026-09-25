@@ -1,12 +1,17 @@
 #include "resource/storage/assets_db.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 #include "gfx/device/buffer_uploader.hpp"
+#include "gfx/device/device.hpp"
 
 namespace {
     auto make_mesh(
@@ -64,6 +69,50 @@ namespace {
             throw std::length_error("geometry buffer size exceeds vk::DeviceSize");
         }
         return static_cast<vk::DeviceSize>(count) * sizeof(T);
+    }
+
+    auto buffer_address(
+        const Device& device,
+        const Buffer& buffer
+    ) -> vk::DeviceAddress {
+        return device.logical_device().getBufferAddress(
+            vk::BufferDeviceAddressInfo{
+                .buffer = buffer.get()
+            }
+        );
+    }
+
+    auto acceleration_structure_properties(const Device& device)
+        -> VkPhysicalDeviceAccelerationStructurePropertiesKHR {
+        VkPhysicalDeviceAccelerationStructurePropertiesKHR properties{};
+        properties.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
+        VkPhysicalDeviceProperties2 device_properties{};
+        device_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        device_properties.pNext = &properties;
+        vkGetPhysicalDeviceProperties2(
+            *device.physical_device(),
+            &device_properties
+        );
+        return properties;
+    }
+
+    auto aligned_address(
+        vk::DeviceAddress address,
+        vk::DeviceSize alignment
+    ) -> vk::DeviceAddress {
+        if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+            throw std::runtime_error(
+                "acceleration-structure scratch alignment is invalid"
+            );
+        }
+        if (address >
+            std::numeric_limits<vk::DeviceAddress>::max() - alignment + 1) {
+            throw std::overflow_error(
+                "acceleration-structure scratch address overflows"
+            );
+        }
+        return (address + alignment - 1) & ~(alignment - 1);
     }
 }
 
@@ -163,6 +212,8 @@ auto AssetsDB::upload(
             BufferDesc{
                 .size = buffer_size<Vertex>(vertex_count_),
                 .usage = vk::BufferUsageFlagBits::eVertexBuffer |
+                         vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                         vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
                          vk::BufferUsageFlagBits::eTransferDst,
                 .memory = BufferMemoryUsage::GpuOnly
             }
@@ -172,6 +223,8 @@ auto AssetsDB::upload(
             BufferDesc{
                 .size = buffer_size<uint32_t>(index_count_),
                 .usage = vk::BufferUsageFlagBits::eIndexBuffer |
+                         vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                         vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
                          vk::BufferUsageFlagBits::eTransferDst,
                 .memory = BufferMemoryUsage::GpuOnly
             }
@@ -236,6 +289,286 @@ auto AssetsDB::upload(
     }
     std::vector<PendingMaterialData>{}.swap(pending_material_data_);
     upload_state_ = UploadState::Enqueued;
+}
+
+auto AssetsDB::build_blas(
+    const Device& device,
+    const MemoryAllocator& allocator
+) -> void {
+    if (upload_state_ != UploadState::Enqueued) {
+        throw std::logic_error(
+            "resource uploads must be enqueued before building BLAS"
+        );
+    }
+    if (blases_.size() != 0) {
+        throw std::logic_error("BLAS resources can only be built once");
+    }
+    if (meshes_.size() == 0) {
+        return;
+    }
+    if (!global_vertex_buffer_.get() || !global_index_buffer_.get()) {
+        throw std::logic_error(
+            "geometry buffers must exist before building BLAS"
+        );
+    }
+
+    const auto format_properties = device.physical_device()
+        .getFormatProperties(vk::Format::eR32G32B32Sfloat);
+    if (!(format_properties.bufferFeatures &
+          vk::FormatFeatureFlagBits::eAccelerationStructureVertexBufferKHR)) {
+        throw std::runtime_error(
+            "R32G32B32Sfloat cannot be used as acceleration-structure vertices"
+        );
+    }
+
+    const auto properties = acceleration_structure_properties(device);
+    const auto vertex_base = buffer_address(device, global_vertex_buffer_);
+    const auto index_base = buffer_address(device, global_index_buffer_);
+    if (vertex_base == 0 || index_base == 0) {
+        throw std::runtime_error(
+            "failed to acquire geometry buffer device addresses"
+        );
+    }
+
+    const auto mesh_count = meshes_.size();
+    std::vector<vk::AccelerationStructureGeometryKHR> geometries;
+    std::vector<vk::AccelerationStructureBuildGeometryInfoKHR> build_infos;
+    std::vector<vk::AccelerationStructureBuildRangeInfoKHR> ranges;
+    std::vector<std::unique_ptr<Blas>> pending_blases;
+    geometries.reserve(mesh_count);
+    build_infos.reserve(mesh_count);
+    ranges.reserve(mesh_count);
+    pending_blases.reserve(mesh_count);
+
+    vk::DeviceSize maximum_scratch_size = 0;
+    for (std::size_t index = 0; index < mesh_count; ++index) {
+        const auto mesh_id = ResourceId<Mesh>{static_cast<uint32_t>(index)};
+        const auto& mesh = meshes_.query(mesh_id);
+        if (mesh.vertex_count == 0 || mesh.index_count == 0 ||
+            mesh.index_count % 3 != 0) {
+            throw std::runtime_error(
+                "BLAS mesh must contain indexed triangles"
+            );
+        }
+
+        const uint32_t primitive_count = mesh.index_count / 3;
+        if (primitive_count > properties.maxPrimitiveCount) {
+            throw std::length_error(
+                "BLAS primitive count exceeds the device limit"
+            );
+        }
+
+        vk::DeviceOrHostAddressConstKHR vertex_data{};
+        vertex_data.deviceAddress = vertex_base +
+            buffer_size<Vertex>(mesh.vertex_offset);
+        vk::DeviceOrHostAddressConstKHR index_data{};
+        index_data.deviceAddress = index_base +
+            buffer_size<uint32_t>(mesh.first_index);
+
+        vk::AccelerationStructureGeometryTrianglesDataKHR triangles{};
+        triangles
+            .setVertexFormat(vk::Format::eR32G32B32Sfloat)
+            .setVertexData(vertex_data)
+            .setVertexStride(sizeof(Vertex))
+            .setMaxVertex(mesh.vertex_count - 1)
+            .setIndexType(vk::IndexType::eUint32)
+            .setIndexData(index_data);
+
+        vk::AccelerationStructureGeometryKHR geometry{};
+        geometry
+            .setGeometryType(vk::GeometryTypeKHR::eTriangles)
+            .setFlags({});
+        geometry.geometry.triangles = triangles;
+        geometries.push_back(geometry);
+
+        vk::AccelerationStructureBuildGeometryInfoKHR build_info{};
+        build_info
+            .setType(vk::AccelerationStructureTypeKHR::eBottomLevel)
+            .setFlags(
+                vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
+            )
+            .setMode(vk::BuildAccelerationStructureModeKHR::eBuild)
+            .setGeometryCount(1)
+            .setPGeometries(&geometries.back());
+
+        const std::array maximum_primitive_counts{primitive_count};
+        const auto sizes =
+            device.logical_device().getAccelerationStructureBuildSizesKHR(
+                vk::AccelerationStructureBuildTypeKHR::eDevice,
+                build_info,
+                maximum_primitive_counts
+            );
+        maximum_scratch_size = std::max(
+            maximum_scratch_size,
+            sizes.buildScratchSize
+        );
+
+        Buffer storage{
+            allocator,
+            BufferDesc{
+                .size = sizes.accelerationStructureSize,
+                .usage =
+                    vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
+                    vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                .memory = BufferMemoryUsage::GpuOnly
+            }
+        };
+        auto handle = device.logical_device().createAccelerationStructureKHR(
+            vk::AccelerationStructureCreateInfoKHR{
+                .buffer = storage.get(),
+                .offset = 0,
+                .size = sizes.accelerationStructureSize,
+                .type = vk::AccelerationStructureTypeKHR::eBottomLevel
+            }
+        );
+        const auto address =
+            device.logical_device().getAccelerationStructureAddressKHR(
+                vk::AccelerationStructureDeviceAddressInfoKHR{
+                    .accelerationStructure = *handle
+                }
+            );
+        if (address == 0) {
+            throw std::runtime_error(
+                "failed to acquire a BLAS device address"
+            );
+        }
+
+        build_info.setDstAccelerationStructure(*handle);
+        build_infos.push_back(build_info);
+        ranges.push_back(vk::AccelerationStructureBuildRangeInfoKHR{
+            .primitiveCount = primitive_count,
+            .primitiveOffset = 0,
+            .firstVertex = 0,
+            .transformOffset = 0
+        });
+        pending_blases.push_back(std::make_unique<Blas>(
+            std::move(storage),
+            std::move(handle),
+            address
+        ));
+    }
+
+    const auto scratch_alignment = static_cast<vk::DeviceSize>(
+        properties.minAccelerationStructureScratchOffsetAlignment
+    );
+    if (maximum_scratch_size >
+        std::numeric_limits<vk::DeviceSize>::max() - scratch_alignment + 1) {
+        throw std::overflow_error("BLAS scratch buffer size overflows");
+    }
+    Buffer scratch{
+        allocator,
+        BufferDesc{
+            .size = maximum_scratch_size + scratch_alignment - 1,
+            .usage = vk::BufferUsageFlagBits::eStorageBuffer |
+                vk::BufferUsageFlagBits::eShaderDeviceAddress,
+            .memory = BufferMemoryUsage::GpuOnly
+        }
+    };
+    const auto scratch_address = aligned_address(
+        buffer_address(device, scratch),
+        scratch_alignment
+    );
+
+    auto command_pool = device.logical_device().createCommandPool(
+        vk::CommandPoolCreateInfo{
+            .flags = vk::CommandPoolCreateFlagBits::eTransient,
+            .queueFamilyIndex = device.graphics_family()
+        }
+    );
+    auto command_buffers = device.logical_device().allocateCommandBuffers(
+        vk::CommandBufferAllocateInfo{
+            .commandPool = *command_pool,
+            .level = vk::CommandBufferLevel::ePrimary,
+            .commandBufferCount = 1
+        }
+    );
+    auto& command_buffer = command_buffers.front();
+    command_buffer.begin(vk::CommandBufferBeginInfo{
+        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+    });
+
+    const std::array geometry_barriers{
+        vk::BufferMemoryBarrier{}
+            .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+            .setDstAccessMask(
+                vk::AccessFlagBits::eAccelerationStructureReadKHR
+            )
+            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+            .setBuffer(global_vertex_buffer_.get())
+            .setOffset(0)
+            .setSize(global_vertex_buffer_.size()),
+        vk::BufferMemoryBarrier{}
+            .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+            .setDstAccessMask(
+                vk::AccessFlagBits::eAccelerationStructureReadKHR
+            )
+            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+            .setBuffer(global_index_buffer_.get())
+            .setOffset(0)
+            .setSize(global_index_buffer_.size())
+    };
+    command_buffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+        {},
+        {},
+        geometry_barriers,
+        {}
+    );
+
+    for (std::size_t index = 0; index < mesh_count; ++index) {
+        build_infos[index].scratchData.deviceAddress = scratch_address;
+        const std::array infos{build_infos[index]};
+        const std::array range_pointers{&ranges[index]};
+        command_buffer.buildAccelerationStructuresKHR(
+            infos,
+            range_pointers
+        );
+
+        if (index + 1 < mesh_count) {
+            const std::array barriers{
+                vk::MemoryBarrier{
+                    .srcAccessMask =
+                        vk::AccessFlagBits::eAccelerationStructureReadKHR |
+                        vk::AccessFlagBits::eAccelerationStructureWriteKHR,
+                    .dstAccessMask =
+                        vk::AccessFlagBits::eAccelerationStructureReadKHR |
+                        vk::AccessFlagBits::eAccelerationStructureWriteKHR
+                }
+            };
+            command_buffer.pipelineBarrier(
+                vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+                vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+                {},
+                barriers,
+                {},
+                {}
+            );
+        }
+    }
+
+    command_buffer.end();
+    const vk::CommandBuffer command_buffer_handle = *command_buffer;
+    vk::SubmitInfo submit_info{};
+    submit_info.setCommandBuffers(command_buffer_handle);
+    auto fence = device.logical_device().createFence(vk::FenceCreateInfo{});
+    device.graphics_queue().submit(submit_info, fence);
+    static_cast<void>(device.logical_device().waitForFences(
+        *fence,
+        true,
+        std::numeric_limits<uint64_t>::max()
+    ));
+
+    for (std::size_t index = 0; index < pending_blases.size(); ++index) {
+        const auto id = blases_.add(std::move(pending_blases[index]));
+        if (id.value() != index) {
+            throw std::logic_error(
+                "BLAS resource id does not match its mesh resource id"
+            );
+        }
+    }
 }
 
 auto AssetsDB::vertex_buffer() const -> const Buffer& {
@@ -308,6 +641,10 @@ auto AssetsDB::query(ResourceId<Material> id) const -> const Material& {
 
 auto AssetsDB::query(ResourceId<Mesh> id) const -> const Mesh& {
     return meshes_.query(id);
+}
+
+auto AssetsDB::query(ResourceId<Blas> id) const -> const Blas& {
+    return blases_.query(id);
 }
 
 auto AssetsDB::query(ResourceId<Model> id) const -> const Model& {

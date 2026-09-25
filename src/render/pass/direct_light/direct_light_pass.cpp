@@ -20,6 +20,7 @@
 #include "gfx/resource/buffer.hpp"
 #include "io/spirv_loader.hpp"
 #include "render/pass/geometry/geometry_pass.hpp"
+#include "render/pass/tlas_build/tlas_build_pass.hpp"
 #include "render/render_graph.hpp"
 #include "scene/scene.hpp"
 
@@ -90,6 +91,12 @@ namespace {
             vk::DescriptorSetLayoutBinding{
                 5,
                 vk::DescriptorType::eSampledImage,
+                1,
+                vk::ShaderStageFlagBits::eFragment
+            },
+            vk::DescriptorSetLayoutBinding{
+                6,
+                vk::DescriptorType::eAccelerationStructureKHR,
                 1,
                 vk::ShaderStageFlagBits::eFragment
             }
@@ -171,6 +178,10 @@ namespace {
             vk::DescriptorPoolSize{
                 vk::DescriptorType::eSampledImage,
                 frame_count * gbuffer_texture_count
+            },
+            vk::DescriptorPoolSize{
+                vk::DescriptorType::eAccelerationStructureKHR,
+                frame_count
             }
         };
         vk::DescriptorPoolCreateInfo create_info{};
@@ -296,10 +307,13 @@ namespace {
 }
 
 struct DirectLightPass::Impl {
-    explicit Impl(const MemoryAllocator& memory_allocator)
-        : allocator(memory_allocator) {}
+    Impl(
+        const MemoryAllocator& memory_allocator,
+        const TlasBuildPass& tlas_pass
+    ) : allocator(memory_allocator), tlas_build_pass(tlas_pass) {}
 
     const MemoryAllocator& allocator;
+    const TlasBuildPass& tlas_build_pass;
 
     vk::raii::DescriptorSetLayout descriptor_set_layout = nullptr;
     vk::raii::PipelineLayout pipeline_layout = nullptr;
@@ -319,9 +333,10 @@ struct DirectLightPass::Impl {
 DirectLightPass::DirectLightPass(
     const Device& device,
     const MemoryAllocator& allocator,
-    RenderGraph& render_graph
+    RenderGraph& render_graph,
+    const TlasBuildPass& tlas_build_pass
 ) : RenderPass(std::string{pass_name}, device, render_graph),
-    impl_(std::make_unique<Impl>(allocator)) {}
+    impl_(std::make_unique<Impl>(allocator, tlas_build_pass)) {}
 
 DirectLightPass::~DirectLightPass() = default;
 
@@ -400,7 +415,12 @@ auto DirectLightPass::init() -> void {
             ))
         };
 
-        std::array<vk::WriteDescriptorSet, 6> writes{};
+        const vk::AccelerationStructureKHR tlas_handle =
+            *impl_->tlas_build_pass.handle(index);
+        vk::WriteDescriptorSetAccelerationStructureKHR tlas_info{};
+        tlas_info.setAccelerationStructures(tlas_handle);
+
+        std::array<vk::WriteDescriptorSet, 7> writes{};
         writes[0]
             .setDstSet(*impl_->descriptor_sets[index])
             .setDstBinding(0)
@@ -419,6 +439,14 @@ auto DirectLightPass::init() -> void {
                 .setDescriptorType(vk::DescriptorType::eSampledImage)
                 .setImageInfo(image_infos[texture]);
         }
+        writes[6]
+            .setPNext(&tlas_info)
+            .setDstSet(*impl_->descriptor_sets[index])
+            .setDstBinding(6)
+            .setDescriptorCount(1)
+            .setDescriptorType(
+                vk::DescriptorType::eAccelerationStructureKHR
+            );
         device_.logical_device().updateDescriptorSets(writes, {});
     }
 
@@ -428,6 +456,7 @@ auto DirectLightPass::init() -> void {
 
 auto DirectLightPass::configure(RenderGraph& render_graph) -> void {
     render_graph.add_dependency(name(), GeometryPass::pass_name);
+    render_graph.add_dependency(name(), TlasBuildPass::pass_name);
     render_graph.set_image_usage(
         name(),
         GeometryPass::base_color_ao_resource,
