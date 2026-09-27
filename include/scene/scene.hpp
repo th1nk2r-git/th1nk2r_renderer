@@ -2,6 +2,7 @@
 #define SCENE_HPP
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -55,6 +56,7 @@ private:
     Camera camera_;
     std::vector<Entity> entities_;
     std::vector<PointLight> point_lights_;
+    std::uint64_t next_entity_id_ = 1;
 };
 
 #endif

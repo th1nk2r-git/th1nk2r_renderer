@@ -20,12 +20,13 @@
 #include "gfx/resource/buffer.hpp"
 #include "io/spirv_loader.hpp"
 #include "render/pass/geometry/geometry_pass.hpp"
+#include "render/pass/restir_di/restir_di_pass.hpp"
 #include "render/pass/tlas_build/tlas_build_pass.hpp"
 #include "render/render_graph.hpp"
 #include "scene/scene.hpp"
 
 namespace {
-    constexpr uint32_t gbuffer_texture_count = 4;
+    constexpr uint32_t gbuffer_texture_count = 3;
 
     struct alignas(16) GpuDirectLightFrame {
         glm::mat4 inverse_view_projection{1.0F};
@@ -36,7 +37,7 @@ namespace {
     struct alignas(16) GpuDirectLightPointLight {
         glm::vec4 position_range{0.0F};
         glm::vec4 color_intensity{0.0F};
-        glm::vec4 radiance{0.0F};
+        glm::vec4 radius{0.0F};
     };
 
     static_assert(sizeof(GpuDirectLightFrame) == 96);
@@ -48,7 +49,7 @@ namespace {
     static_assert(alignof(GpuDirectLightPointLight) == 16);
     static_assert(offsetof(GpuDirectLightPointLight, position_range) == 0);
     static_assert(offsetof(GpuDirectLightPointLight, color_intensity) == 16);
-    static_assert(offsetof(GpuDirectLightPointLight, radiance) == 32);
+    static_assert(offsetof(GpuDirectLightPointLight, radius) == 32);
 
     struct CommandSlot {
         vk::raii::CommandPool pool = nullptr;
@@ -90,13 +91,13 @@ namespace {
             },
             vk::DescriptorSetLayoutBinding{
                 5,
-                vk::DescriptorType::eSampledImage,
+                vk::DescriptorType::eAccelerationStructureKHR,
                 1,
                 vk::ShaderStageFlagBits::eFragment
             },
             vk::DescriptorSetLayoutBinding{
                 6,
-                vk::DescriptorType::eAccelerationStructureKHR,
+                vk::DescriptorType::eStorageBuffer,
                 1,
                 vk::ShaderStageFlagBits::eFragment
             }
@@ -173,7 +174,7 @@ namespace {
             },
             vk::DescriptorPoolSize{
                 vk::DescriptorType::eStorageBuffer,
-                frame_count
+                frame_count * 2
             },
             vk::DescriptorPoolSize{
                 vk::DescriptorType::eSampledImage,
@@ -301,7 +302,7 @@ namespace {
         return {
             .position_range = glm::vec4{light.position, light.range},
             .color_intensity = glm::vec4{light.color, light.intensity},
-            .radiance = glm::vec4{light.radiance, 0.0F, 0.0F, 0.0F}
+            .radius = glm::vec4{light.radius, 0.0F, 0.0F, 0.0F}
         };
     }
 }
@@ -396,6 +397,12 @@ auto DirectLightPass::init() -> void {
             .offset = 0,
             .range = impl_->light_buffers[index].size()
         };
+        const auto& reservoir = render_graph_.buffer(RestirDiPass::final_resource);
+        const vk::DescriptorBufferInfo reservoir_info{
+            .buffer = reservoir.get(),
+            .offset = 0,
+            .range = reservoir.size()
+        };
         const std::array image_infos{
             descriptor_image_info(render_graph_.image(
                 GeometryPass::base_color_ao_resource,
@@ -403,10 +410,6 @@ auto DirectLightPass::init() -> void {
             )),
             descriptor_image_info(render_graph_.image(
                 GeometryPass::normal_rm_resource,
-                index
-            )),
-            descriptor_image_info(render_graph_.image(
-                GeometryPass::emissive_resource,
                 index
             )),
             descriptor_image_info(render_graph_.image(
@@ -439,14 +442,19 @@ auto DirectLightPass::init() -> void {
                 .setDescriptorType(vk::DescriptorType::eSampledImage)
                 .setImageInfo(image_infos[texture]);
         }
-        writes[6]
+        writes[5]
             .setPNext(&tlas_info)
             .setDstSet(*impl_->descriptor_sets[index])
-            .setDstBinding(6)
+            .setDstBinding(5)
             .setDescriptorCount(1)
             .setDescriptorType(
                 vk::DescriptorType::eAccelerationStructureKHR
             );
+        writes[6]
+            .setDstSet(*impl_->descriptor_sets[index])
+            .setDstBinding(6)
+            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+            .setBufferInfo(reservoir_info);
         device_.logical_device().updateDescriptorSets(writes, {});
     }
 
@@ -455,8 +463,11 @@ auto DirectLightPass::init() -> void {
 }
 
 auto DirectLightPass::configure(RenderGraph& render_graph) -> void {
-    render_graph.add_dependency(name(), GeometryPass::pass_name);
+    render_graph.add_dependency(name(), RestirDiPass::pass_name);
     render_graph.add_dependency(name(), TlasBuildPass::pass_name);
+    render_graph.set_buffer_usage(
+        name(), RestirDiPass::final_resource, BufferUsage::FragmentStorageRead
+    );
     render_graph.set_image_usage(
         name(),
         GeometryPass::base_color_ao_resource,
@@ -465,11 +476,6 @@ auto DirectLightPass::configure(RenderGraph& render_graph) -> void {
     render_graph.set_image_usage(
         name(),
         GeometryPass::normal_rm_resource,
-        ImageUsage::FragmentSampled
-    );
-    render_graph.set_image_usage(
-        name(),
-        GeometryPass::emissive_resource,
         ImageUsage::FragmentSampled
     );
     render_graph.set_image_usage(

@@ -46,6 +46,9 @@ rule("shader.spirv")
             sourcefile
         })
         batchcmds:add_depfiles(sourcefile)
+        for _, header in ipairs(os.files(path.join(os.projectdir(), "shaders/common/**.slangh"))) do
+            batchcmds:add_depfiles(header)
+        end
         batchcmds:set_depmtime(os.mtime(output_file))
         batchcmds:set_depcache(target:dependfile(output_file))
     end)

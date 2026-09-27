@@ -7,7 +7,7 @@ auto Scene::set_camera(Camera&& camera) noexcept -> void {
 }
 
 auto Scene::create_entity() -> Entity& {
-    entities_.emplace_back();
+    entities_.emplace_back(next_entity_id_++);
     return entities_.back();
 }
 

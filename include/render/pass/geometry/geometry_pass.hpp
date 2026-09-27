@@ -17,6 +17,7 @@ public:
     inline static constexpr std::string_view base_color_ao_resource = "gbuffer_base_color_ao";
     inline static constexpr std::string_view normal_rm_resource = "gbuffer_normal_rm";
     inline static constexpr std::string_view emissive_resource = "gbuffer_emissive";
+    inline static constexpr std::string_view motion_resource = "gbuffer_motion";
     inline static constexpr std::string_view depth_resource = "gbuffer_depth";
 
     GeometryPass(

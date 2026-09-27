@@ -8,6 +8,7 @@
 #include <span>
 #include <stdexcept>
 #include <utility>
+#include <unordered_map>
 #include <vector>
 
 #include <glm/mat3x3.hpp>
@@ -17,6 +18,7 @@
 #include <glm/vec4.hpp>
 
 #include "gfx/device/device.hpp"
+#include "gfx/pipeline/compute_pipeline.hpp"
 #include "gfx/resource/buffer.hpp"
 #include "io/spirv_loader.hpp"
 #include "render/pass/geometry/geometry_pass.hpp"
@@ -34,6 +36,7 @@ namespace {
 
     struct alignas(16) GpuRenderInstance {
         glm::mat4 model{1.0F};
+        glm::mat4 previous_model{1.0F};
         glm::vec4 normal_column_0{1.0F, 0.0F, 0.0F, 0.0F};
         glm::vec4 normal_column_1{0.0F, 1.0F, 0.0F, 0.0F};
         glm::vec4 normal_column_2{0.0F, 0.0F, 1.0F, 0.0F};
@@ -43,6 +46,15 @@ namespace {
         uint32_t first_index = 0;
         int32_t vertex_offset = 0;
         uint32_t material_index = 0;
+        uint32_t motion_valid = 0;
+        uint32_t padding_0 = 0;
+        uint32_t padding_1 = 0;
+        uint32_t padding_2 = 0;
+    };
+
+    struct PreviousInstanceState {
+        glm::mat4 model{1.0F};
+        ResourceId<Model> model_id;
     };
 
     struct alignas(16) GpuCullingConstants {
@@ -53,12 +65,14 @@ namespace {
         uint32_t padding_1 = 0;
     };
 
-    static_assert(sizeof(GpuRenderInstance) == 160);
+    static_assert(sizeof(GpuRenderInstance) == 240);
     static_assert(offsetof(GpuRenderInstance, model) == 0);
-    static_assert(offsetof(GpuRenderInstance, normal_column_0) == 64);
-    static_assert(offsetof(GpuRenderInstance, bounds_minimum) == 112);
-    static_assert(offsetof(GpuRenderInstance, index_count) == 144);
-    static_assert(offsetof(GpuRenderInstance, material_index) == 156);
+    static_assert(offsetof(GpuRenderInstance, previous_model) == 64);
+    static_assert(offsetof(GpuRenderInstance, normal_column_0) == 128);
+    static_assert(offsetof(GpuRenderInstance, bounds_minimum) == 176);
+    static_assert(offsetof(GpuRenderInstance, index_count) == 208);
+    static_assert(offsetof(GpuRenderInstance, material_index) == 220);
+    static_assert(offsetof(GpuRenderInstance, motion_valid) == 224);
     static_assert(sizeof(GpuCullingConstants) == 112);
     static_assert(sizeof(vk::DrawIndexedIndirectCommand) == 20);
 
@@ -158,19 +172,11 @@ namespace {
             device,
             "./spv/culling.spv"
         );
-        vk::PipelineShaderStageCreateInfo stage{};
-        stage
-            .setStage(vk::ShaderStageFlagBits::eCompute)
-            .setModule(*shader)
-            .setPName("main");
-        vk::ComputePipelineCreateInfo create_info{};
-        create_info
-            .setStage(stage)
-            .setLayout(*pipeline_layout);
-        return device.logical_device().createComputePipeline(
-            nullptr,
-            create_info
-        );
+        const ComputePipelineDesc desc{
+            .compute_shader = &shader,
+            .layout = &pipeline_layout
+        };
+        return ComputePipelineFactory::create(device, desc);
     }
 
     auto create_descriptor_pool(
@@ -275,6 +281,7 @@ struct CullingPass::Impl {
     std::vector<CommandSlot> command_slots;
     std::vector<GpuCullingConstants> constants;
     std::vector<GpuRenderInstance> cpu_instances;
+    std::unordered_map<uint64_t, PreviousInstanceState> previous_models;
     bool initialized = false;
 };
 
@@ -408,6 +415,7 @@ auto CullingPass::prepare(const Scene& scene) -> void {
     }
 
     impl_->cpu_instances.clear();
+    std::unordered_map<uint64_t, PreviousInstanceState> current_models;
     for (const auto& entity : scene.entities()) {
         const auto* mesh_renderer = entity.get_component<MeshRenderer>();
         if (mesh_renderer == nullptr) {
@@ -417,11 +425,19 @@ auto CullingPass::prepare(const Scene& scene) -> void {
         const auto model = transform == nullptr
             ? glm::mat4{1.0F}
             : transform->model_matrix();
+        const auto model_id = mesh_renderer->model_id();
+        const auto previous = impl_->previous_models.find(entity.id());
+        const bool motion_valid = previous != impl_->previous_models.end() &&
+            previous->second.model_id == model_id;
+        const auto previous_model = motion_valid ? previous->second.model : model;
+        current_models.insert_or_assign(
+            entity.id(), PreviousInstanceState{model, model_id}
+        );
         const auto normal_matrix = glm::transpose(
             glm::inverse(glm::mat3{model})
         );
         const auto& render_model = impl_->assets.query(
-            mesh_renderer->model_id()
+            model_id
         );
 
         for (const auto& primitive : render_model.primitives()) {
@@ -434,6 +450,7 @@ auto CullingPass::prepare(const Scene& scene) -> void {
             const auto& material = impl_->assets.query(primitive.material);
             impl_->cpu_instances.push_back(GpuRenderInstance{
                 .model = model,
+                .previous_model = previous_model,
                 .normal_column_0 = glm::vec4{normal_matrix[0], 0.0F},
                 .normal_column_1 = glm::vec4{normal_matrix[1], 0.0F},
                 .normal_column_2 = glm::vec4{normal_matrix[2], 0.0F},
@@ -442,10 +459,12 @@ auto CullingPass::prepare(const Scene& scene) -> void {
                 .index_count = mesh.index_count,
                 .first_index = mesh.first_index,
                 .vertex_offset = mesh.vertex_offset,
-                .material_index = material.buffer_index
+                .material_index = material.buffer_index,
+                .motion_valid = motion_valid ? 1U : 0U
             });
         }
     }
+    impl_->previous_models = std::move(current_models);
 
     const auto frame_index = render_graph_.current_frame_index();
     if (!impl_->cpu_instances.empty()) {

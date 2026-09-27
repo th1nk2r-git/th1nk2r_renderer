@@ -15,14 +15,19 @@ struct GeometryVertexOutput {
     [[vk::location(2)]] float3 world_normal;
     [[vk::location(3)]] float4 world_tangent;
     [[vk::location(4)]] nointerpolation uint material_index;
+    [[vk::location(5)]] float4 previous_clip;
+    [[vk::location(6)]] nointerpolation uint motion_valid;
 };
 
 struct GeometryCamera {
     column_major matrix<float, 4, 4> view_projection;
+    column_major matrix<float, 4, 4> previous_view_projection;
+    float4 viewport_size;
 };
 
 struct RenderInstance {
     column_major matrix<float, 4, 4> model;
+    column_major matrix<float, 4, 4> previous_model;
     float4 normal_column_0;
     float4 normal_column_1;
     float4 normal_column_2;
@@ -32,6 +37,10 @@ struct RenderInstance {
     uint first_index;
     int vertex_offset;
     uint material_index;
+    uint motion_valid;
+    uint padding_0;
+    uint padding_1;
+    uint padding_2;
 };
 
 [[vk::binding(0, 0)]]
@@ -48,6 +57,12 @@ GeometryVertexOutput main(GeometryVertexInput input) {
     output.color = input.color;
     matrix<float, 4, 4> mvp = mul(camera.view_projection, instance.model);
     output.position = mul(mvp, float4(input.position, 1));
+    output.previous_clip = mul(
+        mul(camera.previous_view_projection, instance.previous_model),
+        float4(input.position, 1)
+    );
+    output.motion_valid = instance.motion_valid != 0u &&
+        camera.viewport_size.z > 0.5 ? 1u : 0u;
     output.texcoord = input.texcoord;
     output.world_tangent = normalize(
         mul(instance.model, float4(input.tangent.xyz, 0))

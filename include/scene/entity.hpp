@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -14,6 +15,7 @@
 class Entity {
 public:
     Entity() = default;
+    explicit Entity(std::uint64_t id) noexcept : id_(id) {}
     ~Entity() = default;
 
     Entity(const Entity&) = delete;
@@ -83,7 +85,12 @@ public:
         return components_.size();
     }
 
+    auto id() const noexcept -> std::uint64_t {
+        return id_;
+    }
+
 private:
+    std::uint64_t id_ = 0;
     std::vector<std::unique_ptr<Component>> components_;
 };
 

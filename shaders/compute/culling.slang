@@ -1,6 +1,7 @@
 struct RenderInstance
 {
     column_major matrix<float, 4, 4> model;
+    column_major matrix<float, 4, 4> previous_model;
     float4 normal_column_0;
     float4 normal_column_1;
     float4 normal_column_2;
@@ -10,6 +11,10 @@ struct RenderInstance
     uint first_index;
     int vertex_offset;
     uint material_index;
+    uint motion_valid;
+    uint padding_0;
+    uint padding_1;
+    uint padding_2;
 };
 
 struct DrawIndexedIndirectCommand

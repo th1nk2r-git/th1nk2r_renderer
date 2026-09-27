@@ -29,9 +29,14 @@
 namespace {
     struct alignas(16) GpuGeometryCamera {
         glm::mat4 view_projection{1.0F};
+        glm::mat4 previous_view_projection{1.0F};
+        // XY: viewport dimensions, Z: valid previous camera frame.
+        glm::vec4 viewport_size{0.0F};
     };
 
-    static_assert(sizeof(GpuGeometryCamera) == 64);
+    static_assert(sizeof(GpuGeometryCamera) == 144);
+    static_assert(offsetof(GpuGeometryCamera, previous_view_projection) == 64);
+    static_assert(offsetof(GpuGeometryCamera, viewport_size) == 128);
 
     struct CommandSlot {
         vk::raii::CommandPool pool = nullptr;
@@ -101,7 +106,10 @@ namespace {
             .setBinding(0)
             .setDescriptorType(vk::DescriptorType::eUniformBuffer)
             .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex);
+            .setStageFlags(
+                vk::ShaderStageFlagBits::eVertex |
+                vk::ShaderStageFlagBits::eFragment
+            );
         camera_bindings[1]
             .setBinding(1)
             .setDescriptorType(vk::DescriptorType::eStorageBuffer)
@@ -229,6 +237,9 @@ namespace {
             ).format(),
             render_graph.image(
                 GeometryPass::emissive_resource
+            ).format(),
+            render_graph.image(
+                GeometryPass::motion_resource
             ).format()
         };
         desc.depth_attachment_format = render_graph.image(
@@ -381,6 +392,8 @@ struct GeometryPass::Impl {
     vk::raii::DescriptorSet material_descriptor_set = nullptr;
 
     std::vector<CommandSlot> command_slots;
+    glm::mat4 previous_view_projection{1.0F};
+    bool camera_history_valid = false;
     bool initialized = false;
 };
 
@@ -422,6 +435,12 @@ auto GeometryPass::declare_resources(
     );
     require_format(
         device,
+        vk::Format::eR16G16B16A16Sfloat,
+        color_features,
+        "motion G-buffer"
+    );
+    require_format(
+        device,
         vk::Format::eD32Sfloat,
         vk::FormatFeatureFlagBits::eDepthStencilAttachment |
             vk::FormatFeatureFlagBits::eSampledImage,
@@ -447,6 +466,7 @@ auto GeometryPass::declare_resources(
     declare(base_color_ao_resource, vk::Format::eR8G8B8A8Srgb);
     declare(normal_rm_resource, vk::Format::eR16G16B16A16Sfloat);
     declare(emissive_resource, choose_emissive_format(device));
+    declare(motion_resource, vk::Format::eR16G16B16A16Sfloat);
     declare(depth_resource, vk::Format::eD32Sfloat);
 }
 
@@ -659,6 +679,11 @@ auto GeometryPass::configure(RenderGraph& render_graph) -> void {
     );
     render_graph.set_image_usage(
         name(),
+        motion_resource,
+        ImageUsage::ColorAttachment
+    );
+    render_graph.set_image_usage(
+        name(),
         depth_resource,
         ImageUsage::DepthAttachment
     );
@@ -681,11 +706,20 @@ auto GeometryPass::prepare(const Scene& scene) -> void {
         scene.camera().projection_matrix(aspect_ratio);
     const auto view_projection = projection * view;
     const GpuGeometryCamera camera{
-        .view_projection = view_projection
+        .view_projection = view_projection,
+        .previous_view_projection = impl_->previous_view_projection,
+        .viewport_size = glm::vec4{
+            static_cast<float>(extent.width),
+            static_cast<float>(extent.height),
+            impl_->camera_history_valid ? 1.0F : 0.0F,
+            0.0F
+        }
     };
     impl_->camera_buffers.at(
         render_graph_.current_frame_index()
     ).write(&camera, sizeof(camera));
+    impl_->previous_view_projection = view_projection;
+    impl_->camera_history_valid = true;
 }
 
 auto GeometryPass::record() -> vk::CommandBuffer {
@@ -702,7 +736,8 @@ auto GeometryPass::record() -> vk::CommandBuffer {
     const std::array color_formats{
         render_graph_.image(base_color_ao_resource).format(),
         render_graph_.image(normal_rm_resource).format(),
-        render_graph_.image(emissive_resource).format()
+        render_graph_.image(emissive_resource).format(),
+        render_graph_.image(motion_resource).format()
     };
     vk::CommandBufferInheritanceRenderingInfo rendering_inheritance{};
     rendering_inheritance

@@ -2,11 +2,13 @@
 
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "render/pass/culling/culling_pass.hpp"
 #include "render/pass/direct_light/direct_light_pass.hpp"
 #include "render/pass/geometry/geometry_pass.hpp"
+#include "render/pass/restir_di/restir_di_pass.hpp"
 #include "render/pass/tlas_build/tlas_build_pass.hpp"
 
 Renderer::Renderer(
@@ -54,6 +56,11 @@ auto Renderer::create_render_pass() -> void {
         render_graph_,
         assets_
     ));
+    render_passes_.push_back(std::make_unique<RestirDiPass>(
+        device_context_.device(),
+        device_context_.allocator(),
+        render_graph_
+    ));
     render_passes_.push_back(std::make_unique<DirectLightPass>(
         device_context_.device(),
         device_context_.allocator(),
@@ -65,6 +72,11 @@ auto Renderer::create_render_pass() -> void {
 auto Renderer::create_render_resources() -> void {
     CullingPass::declare_resources(render_graph_);
     GeometryPass::declare_resources(
+        device_context_.device(),
+        render_graph_,
+        swapchain_.extent()
+    );
+    RestirDiPass::declare_resources(
         device_context_.device(),
         render_graph_,
         swapchain_.extent()

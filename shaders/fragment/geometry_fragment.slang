@@ -1,5 +1,6 @@
 struct GeometryFragmentInput
 {
+    float4 position : SV_Position;
     [[vk::location(0)]]
     float3 color;
     [[vk::location(1)]]
@@ -10,6 +11,10 @@ struct GeometryFragmentInput
     float4 world_tangent;
     [[vk::location(4)]]
     nointerpolation uint material_index;
+    [[vk::location(5)]]
+    float4 previous_clip;
+    [[vk::location(6)]]
+    nointerpolation uint motion_valid;
 };
 
 struct GeometryFragmentOutput
@@ -25,7 +30,22 @@ struct GeometryFragmentOutput
     // Linear HDR emissive color.
     [[vk::location(2)]]
     float3 emissive;
+
+    // XY: previousUV-currentUV, Z: previous linear view depth,
+    // W: valid previous projection.
+    [[vk::location(3)]]
+    float4 motion;
 };
+
+struct GeometryCamera
+{
+    column_major matrix<float, 4, 4> view_projection;
+    column_major matrix<float, 4, 4> previous_view_projection;
+    float4 viewport_size;
+};
+
+[[vk::binding(0, 0)]]
+ConstantBuffer<GeometryCamera> camera;
 
 struct GeometryMaterial
 {
@@ -144,5 +164,23 @@ GeometryFragmentOutput main(GeometryFragmentInput input)
         material.emissive_texture_index
     ].Sample(material_sampler, input.texcoord).rgb *
         material.emissive_normal_scale.xyz;
+
+    output.motion = float4(0.0);
+    if (input.motion_valid != 0u && input.previous_clip.w > 0.0 &&
+        input.previous_clip.z >= 0.0 &&
+        input.previous_clip.z < input.previous_clip.w)
+    {
+        float2 previous_uv = input.previous_clip.xy /
+            input.previous_clip.w * 0.5 + 0.5;
+        if (all(previous_uv >= 0.0) && all(previous_uv < 1.0))
+        {
+            float2 current_uv = input.position.xy / camera.viewport_size.xy;
+            output.motion = float4(
+                previous_uv - current_uv,
+                input.previous_clip.w,
+                1.0
+            );
+        }
+    }
     return output;
 }
