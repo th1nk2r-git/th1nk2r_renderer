@@ -1,4 +1,4 @@
-struct RenderInstance
+struct Instance
 {
     column_major matrix<float, 4, 4> model;
     column_major matrix<float, 4, 4> previous_model;
@@ -36,7 +36,7 @@ struct CullingConstants
 };
 
 [[vk::binding(0, 0)]]
-StructuredBuffer<RenderInstance> instances;
+StructuredBuffer<Instance> instances;
 
 [[vk::binding(1, 0)]]
 RWStructuredBuffer<DrawIndexedIndirectCommand> commands;
@@ -47,12 +47,10 @@ RWStructuredBuffer<uint> draw_count;
 [[vk::push_constant]]
 ConstantBuffer<CullingConstants> constants;
 
-bool visible(RenderInstance instance)
+bool visible(Instance instance)
 {
-    const float3 local_center =
-        (instance.bounds_minimum.xyz + instance.bounds_maximum.xyz) * 0.5;
-    const float3 local_extents =
-        (instance.bounds_maximum.xyz - instance.bounds_minimum.xyz) * 0.5;
+    const float3 local_center = (instance.bounds_minimum.xyz + instance.bounds_maximum.xyz) * 0.5;
+    const float3 local_extents = (instance.bounds_maximum.xyz - instance.bounds_minimum.xyz) * 0.5;
 
     const float3 world_center = mul(
         instance.model,
@@ -85,7 +83,7 @@ void main(uint3 dispatch_thread_id : SV_DispatchThreadID)
         return;
     }
 
-    const RenderInstance instance = instances[instance_index];
+    const Instance instance = instances[instance_index];
     if (!visible(instance))
     {
         return;

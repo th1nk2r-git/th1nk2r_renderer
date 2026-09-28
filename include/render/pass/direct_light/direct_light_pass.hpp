@@ -8,7 +8,7 @@
 
 #include "render/pass/render_pass.hpp"
 
-class MemoryAllocator;
+class RestirDiPass;
 class TlasBuildPass;
 
 class DirectLightPass final : public RenderPass {
@@ -18,9 +18,9 @@ public:
 
     DirectLightPass(
         const Device& device,
-        const MemoryAllocator& allocator,
         RenderGraph& render_graph,
-        const TlasBuildPass& tlas_build_pass
+        const TlasBuildPass& tlas_build_pass,
+        const RestirDiPass& restir_di_pass
     );
     ~DirectLightPass() override;
 

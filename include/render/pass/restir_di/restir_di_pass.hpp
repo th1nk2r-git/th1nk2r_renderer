@@ -1,35 +1,42 @@
 #ifndef RESTIR_DI_PASS_HPP
 #define RESTIR_DI_PASS_HPP
 
+#include <cstdint>
 #include <memory>
 #include <string_view>
 
+#include <vulkan/vulkan.hpp>
+
 #include "render/pass/render_pass.hpp"
 
+class Buffer;
 class MemoryAllocator;
+class TlasBuildPass;
 
 class RestirDiPass final : public RenderPass {
 public:
     inline static constexpr std::string_view pass_name = "restir_di";
     inline static constexpr std::string_view current_resource = "restir_di_current";
     inline static constexpr std::string_view final_resource = "restir_di_final";
+    inline static constexpr uint32_t reservoir_size = 32;
 
-    // Sampling controls. A reservoir always stores one selected sample.
-    // Number of new light/sample-point proposals per pixel each frame.
-    inline static constexpr uint32_t candidates_per_pixel = 8;
-    // Number of nearby reservoirs considered in the second dispatch.
-    inline static constexpr uint32_t spatial_neighbors_per_pixel = 4;
-    // Maximum offset of those neighbors, in pixels.
-    inline static constexpr uint32_t spatial_radius_pixels = 2;
-    // Limit the effective M contributed by each reused reservoir; this is
-    // not a storage capacity or a limit on the final accumulated M.
-    inline static constexpr uint32_t max_reused_sample_count = 32;
+    struct Settings {
+        uint32_t candidate_count = 32;
+        uint32_t temporal_history_length = 5; // History M is capped at candidate_count * this value.
+        uint32_t spatial_neighbor_count = 5;
+        uint32_t spatial_radius = 30; // Pixels.
+        float depth_threshold = 0.1F; // Relative linear depth difference.
+        float normal_threshold = 0.9063078F; // Minimum normal cosine (25 degrees).
+        float roughness_threshold = 0.2F;
+        float metallic_threshold = 0.2F;
+        float ray_bias = 0.01F;
+        bool temporal_reuse = true;
+        bool spatial_reuse = false;
 
-    RestirDiPass(
-        const Device& device,
-        const MemoryAllocator& allocator,
-        RenderGraph& render_graph
-    );
+        auto operator==(const Settings&) const -> bool = default;
+    };
+
+    RestirDiPass(const Device& device, const MemoryAllocator& allocator, RenderGraph& render_graph, const TlasBuildPass& tlas_build_pass);
     ~RestirDiPass() override;
 
     RestirDiPass(const RestirDiPass&) = delete;
@@ -37,16 +44,18 @@ public:
     RestirDiPass(RestirDiPass&&) = delete;
     auto operator=(RestirDiPass&&) -> RestirDiPass& = delete;
 
-    static auto declare_resources(
-        const Device& device,
-        RenderGraph& render_graph,
-        vk::Extent2D extent
-    ) -> void;
+    static auto declare_resources(const Device& device, RenderGraph& render_graph, vk::Extent2D extent) -> void;
 
     auto init() -> void override;
     auto configure(RenderGraph& render_graph) -> void override;
     auto prepare(const Scene& scene) -> void override;
     auto record() -> vk::CommandBuffer override;
+
+    auto settings() const noexcept -> const Settings&;
+    auto set_settings(const Settings& settings) -> void;
+    auto reset_history() noexcept -> void;
+    auto frame_buffer(uint32_t frame_index) const -> const Buffer&;
+    auto light_buffer(uint32_t frame_index) const -> const Buffer&;
 
 private:
     struct Impl;

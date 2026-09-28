@@ -1,4 +1,4 @@
-struct GeometryVertexInput {
+struct Input {
     [[vk::location(0)]] float3 position;
     [[vk::location(1)]] float3 color;
     [[vk::location(2)]] float2 texcoord;
@@ -8,7 +8,7 @@ struct GeometryVertexInput {
     uint first_instance : SV_StartInstanceLocation;
 };
 
-struct GeometryVertexOutput {
+struct Output {
     float4 position : SV_Position;
     [[vk::location(0)]] float3 color;
     [[vk::location(1)]] float2 texcoord;
@@ -19,13 +19,13 @@ struct GeometryVertexOutput {
     [[vk::location(6)]] nointerpolation uint motion_valid;
 };
 
-struct GeometryCamera {
+struct Camera {
     column_major matrix<float, 4, 4> view_projection;
     column_major matrix<float, 4, 4> previous_view_projection;
     float4 viewport_size;
 };
 
-struct RenderInstance {
+struct Instance {
     column_major matrix<float, 4, 4> model;
     column_major matrix<float, 4, 4> previous_model;
     float4 normal_column_0;
@@ -44,16 +44,16 @@ struct RenderInstance {
 };
 
 [[vk::binding(0, 0)]]
-ConstantBuffer<GeometryCamera> camera;
+ConstantBuffer<Camera> camera;
 
 [[vk::binding(1, 0)]]
-StructuredBuffer<RenderInstance> instances;
+StructuredBuffer<Instance> instances;
 
-GeometryVertexOutput main(GeometryVertexInput input) {
-    const RenderInstance instance = instances[
+Output main(Input input) {
+    const Instance instance = instances[
         input.first_instance + input.instance_id
     ];
-    GeometryVertexOutput output;
+    Output output;
     output.color = input.color;
     matrix<float, 4, 4> mvp = mul(camera.view_projection, instance.model);
     output.position = mul(mvp, float4(input.position, 1));
@@ -61,8 +61,7 @@ GeometryVertexOutput main(GeometryVertexInput input) {
         mul(camera.previous_view_projection, instance.previous_model),
         float4(input.position, 1)
     );
-    output.motion_valid = instance.motion_valid != 0u &&
-        camera.viewport_size.z > 0.5 ? 1u : 0u;
+    output.motion_valid = instance.motion_valid != 0u && camera.viewport_size.z > 0.5 ? 1u : 0u;
     output.texcoord = input.texcoord;
     output.world_tangent = normalize(
         mul(instance.model, float4(input.tangent.xyz, 0))

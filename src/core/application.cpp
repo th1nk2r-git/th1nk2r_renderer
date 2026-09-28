@@ -42,7 +42,7 @@ auto Application::setup_scene() -> void {
     scene_.camera().set_perspective(glm::radians(60.0F), 0.1F, 400.0F);
 
     scene_.add_point_light(PointLight{
-        .position = glm::vec3{0.0F, 15.0F, 0.0F},
+        .position = glm::vec3{0.0F, 14.0F, 0.0F},
         .range = 2000.0F,
         .radius = 1.0F,
         .color = glm::vec3{1.0F},

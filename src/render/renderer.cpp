@@ -56,16 +56,19 @@ auto Renderer::create_render_pass() -> void {
         render_graph_,
         assets_
     ));
-    render_passes_.push_back(std::make_unique<RestirDiPass>(
-        device_context_.device(),
-        device_context_.allocator(),
-        render_graph_
-    ));
-    render_passes_.push_back(std::make_unique<DirectLightPass>(
+    auto restir_pass = std::make_unique<RestirDiPass>(
         device_context_.device(),
         device_context_.allocator(),
         render_graph_,
         tlas_build_pass_reference
+    );
+    const auto& restir_pass_reference = *restir_pass;
+    render_passes_.push_back(std::move(restir_pass));
+    render_passes_.push_back(std::make_unique<DirectLightPass>(
+        device_context_.device(),
+        render_graph_,
+        tlas_build_pass_reference,
+        restir_pass_reference
     ));
 }
 
@@ -76,11 +79,7 @@ auto Renderer::create_render_resources() -> void {
         render_graph_,
         swapchain_.extent()
     );
-    RestirDiPass::declare_resources(
-        device_context_.device(),
-        render_graph_,
-        swapchain_.extent()
-    );
+    RestirDiPass::declare_resources(device_context_.device(), render_graph_, swapchain_.extent());
 }
 
 auto Renderer::init_render_pass() -> void {
@@ -112,10 +111,6 @@ auto Renderer::bind_swapchain_images(uint32_t image_index) -> void {
     render_graph_.bind_external_image(
         "backbuffer",
         swapchain_.image(image_index)
-    );
-    render_graph_.bind_external_image(
-        "depth",
-        swapchain_.depth_image(image_index)
     );
 }
 

@@ -1,6 +1,7 @@
 #ifndef RENDER_GRAPH_HPP
 #define RENDER_GRAPH_HPP
 
+#include <array>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -74,7 +75,8 @@ public:
     auto create_image(
         std::string name,
         const ImageDesc& desc,
-        ResourceMultiplicity multiplicity = ResourceMultiplicity::Single
+        ResourceMultiplicity multiplicity = ResourceMultiplicity::Single,
+        std::array<float, 4> clear_color = {0.01F, 0.015F, 0.025F, 1.0F}
     ) -> void;
     auto bind_external_image(std::string name, Image& image) -> void;
     auto image(std::string_view name) -> Image&;
@@ -152,6 +154,7 @@ private:
     struct DeclaredImage {
         ImageDesc desc;
         ResourceMultiplicity multiplicity = ResourceMultiplicity::Single;
+        std::array<float, 4> clear_color{};
     };
 
     struct DeclaredBuffer {

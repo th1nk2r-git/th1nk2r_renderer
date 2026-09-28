@@ -67,26 +67,6 @@ namespace {
         }
     }
 
-    auto choose_emissive_format(const Device& device) -> vk::Format {
-        constexpr auto required =
-            vk::FormatFeatureFlagBits::eColorAttachment |
-            vk::FormatFeatureFlagBits::eSampledImage;
-        if (supports_format(
-                device,
-                vk::Format::eB10G11R11UfloatPack32,
-                required
-            )) {
-            return vk::Format::eB10G11R11UfloatPack32;
-        }
-        require_format(
-            device,
-            vk::Format::eR16G16B16A16Sfloat,
-            required,
-            "emissive G-buffer"
-        );
-        return vk::Format::eR16G16B16A16Sfloat;
-    }
-
     auto create_descriptor_set_layout(
         const Device& device,
         std::span<const vk::DescriptorSetLayoutBinding> bindings
@@ -233,10 +213,10 @@ namespace {
                 GeometryPass::base_color_ao_resource
             ).format(),
             render_graph.image(
-                GeometryPass::normal_rm_resource
+                GeometryPass::normal_roughness_resource
             ).format(),
             render_graph.image(
-                GeometryPass::emissive_resource
+                GeometryPass::emissive_metallic_resource
             ).format(),
             render_graph.image(
                 GeometryPass::motion_resource
@@ -431,13 +411,7 @@ auto GeometryPass::declare_resources(
         device,
         vk::Format::eR16G16B16A16Sfloat,
         color_features,
-        "normal G-buffer"
-    );
-    require_format(
-        device,
-        vk::Format::eR16G16B16A16Sfloat,
-        color_features,
-        "motion G-buffer"
+        "normal, emissive/metallic and motion G-buffers"
     );
     require_format(
         device,
@@ -450,7 +424,8 @@ auto GeometryPass::declare_resources(
     const vk::Extent3D image_extent{extent.width, extent.height, 1};
     const auto declare = [&render_graph, image_extent](
         std::string_view name,
-        vk::Format format
+        vk::Format format,
+        std::array<float, 4> clear_color = {}
     ) {
         render_graph.create_image(
             std::string{name},
@@ -459,13 +434,14 @@ auto GeometryPass::declare_resources(
                 .extent = image_extent,
                 .samples = vk::SampleCountFlagBits::e1
             },
-            ResourceMultiplicity::PerFrame
+            ResourceMultiplicity::PerFrame,
+            clear_color
         );
     };
 
-    declare(base_color_ao_resource, vk::Format::eR8G8B8A8Srgb);
-    declare(normal_rm_resource, vk::Format::eR16G16B16A16Sfloat);
-    declare(emissive_resource, choose_emissive_format(device));
+    declare(base_color_ao_resource, vk::Format::eR8G8B8A8Srgb, {0, 0, 0, 1});
+    declare(normal_roughness_resource, vk::Format::eR16G16B16A16Sfloat, {0, 0, 1, 1});
+    declare(emissive_metallic_resource, vk::Format::eR16G16B16A16Sfloat);
     declare(motion_resource, vk::Format::eR16G16B16A16Sfloat);
     declare(depth_resource, vk::Format::eD32Sfloat);
 }
@@ -669,12 +645,12 @@ auto GeometryPass::configure(RenderGraph& render_graph) -> void {
     );
     render_graph.set_image_usage(
         name(),
-        normal_rm_resource,
+        normal_roughness_resource,
         ImageUsage::ColorAttachment
     );
     render_graph.set_image_usage(
         name(),
-        emissive_resource,
+        emissive_metallic_resource,
         ImageUsage::ColorAttachment
     );
     render_graph.set_image_usage(
@@ -735,8 +711,8 @@ auto GeometryPass::record() -> vk::CommandBuffer {
 
     const std::array color_formats{
         render_graph_.image(base_color_ao_resource).format(),
-        render_graph_.image(normal_rm_resource).format(),
-        render_graph_.image(emissive_resource).format(),
+        render_graph_.image(normal_roughness_resource).format(),
+        render_graph_.image(emissive_metallic_resource).format(),
         render_graph_.image(motion_resource).format()
     };
     vk::CommandBufferInheritanceRenderingInfo rendering_inheritance{};

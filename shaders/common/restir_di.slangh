@@ -1,19 +1,19 @@
 #ifndef RESTIR_DI_SLANGH
 #define RESTIR_DI_SLANGH
 
-static const float RESTIR_PI = 3.14159265358979323846;
-static const uint RESTIR_INVALID_LIGHT = 0xffffffffu;
+static const float PI = 3.14159265358979323846;
+static const uint INVALID_LIGHT = 0xffffffffu;
 
-struct RestirPointLight
+struct PointLight
 {
     float4 position_range;
     float4 color_intensity;
     float4 radius;
 };
 
-// 32 bytes per pixel. Depth, normal/material, and linear view depth describe
-// the producing pixel so the final buffer can validate temporal history.
-struct RestirReservoir
+// One sample per pixel, 32 bytes. Weight is normalized W, not the running sum.
+// packed_normal_rm: octahedral normal (8+8 bits), roughness (8), metallic (8).
+struct Reservoir
 {
     uint light_index;
     uint packed_uv;
@@ -25,129 +25,80 @@ struct RestirReservoir
     float view_depth;
 };
 
-struct RestirSurface
+struct Surface
 {
     float3 position;
     float3 normal;
     float3 base_color;
     float roughness;
     float metallic;
-    float depth;
-    float4 normal_rm;
 };
 
-float2 restir_sign_not_zero(float2 value)
+struct Frame
 {
-    return float2(value.x >= 0.0 ? 1.0 : -1.0, value.y >= 0.0 ? 1.0 : -1.0);
-}
+    column_major matrix<float, 4, 4> inverse_view_projection;
+    column_major matrix<float, 4, 4> view_projection;
+    float4 camera_position;
+    // Light count, viewport width/height, valid previous-frame reservoirs.
+    uint4 light_count_viewport;
+    // Frame sequence, initial candidates, spatial neighbors, radius in pixels.
+    uint4 sampling;
+    // X: maximum M accepted from temporal history.
+    uint4 reuse_limits;
+    // Relative depth difference, normal cosine, roughness/metallic differences.
+    float4 rejection;
+    // X: world-space shadow-ray bias.
+    float4 visibility;
+};
 
-float3 restir_decode_octahedral(float2 encoded)
-{
-    float3 normal = float3(encoded, 1.0 - abs(encoded.x) - abs(encoded.y));
-    if (normal.z < 0.0)
-    {
-        normal.xy = (1.0 - abs(normal.yx)) * restir_sign_not_zero(normal.xy);
-    }
-    return normalize(normal);
-}
-
-uint restir_pack_uv(float2 uv)
-{
-    uint2 value = uint2(min(uv * 65536.0, 65535.0));
-    return value.x | (value.y << 16u);
-}
-
-float2 restir_unpack_uv(uint packed)
-{
-    return (float2(packed & 0xffffu, packed >> 16u) + 0.5) / 65536.0;
-}
-
-uint restir_pack_normal_rm(float4 normal_rm)
-{
-    float4 normalized = saturate(float4(normal_rm.xy * 0.5 + 0.5, normal_rm.zw));
-    uint4 bytes = uint4(round(normalized * 255.0));
-    return bytes.x | (bytes.y << 8u) | (bytes.z << 16u) | (bytes.w << 24u);
-}
-
-float4 restir_unpack_normal_rm(uint packed)
-{
-    float4 value = float4(
-        packed & 0xffu,
-        (packed >> 8u) & 0xffu,
-        (packed >> 16u) & 0xffu,
-        packed >> 24u
-    ) / 255.0;
-    return float4(value.xy * 2.0 - 1.0, value.zw);
-}
-
-float3 restir_reconstruct_position(
-    float2 pixel_center,
-    float depth,
-    uint2 viewport,
-    column_major matrix<float, 4, 4> inverse_view_projection)
-{
-    float2 ndc = pixel_center / float2(viewport) * 2.0 - 1.0;
-    float4 world = mul(inverse_view_projection, float4(ndc, depth, 1.0));
-    return world.xyz / world.w;
-}
-
-RestirReservoir restir_empty(float depth, float4 normal_rm)
-{
-    RestirReservoir reservoir;
-    reservoir.light_index = RESTIR_INVALID_LIGHT;
-    reservoir.packed_uv = 0u;
-    reservoir.weight = 0.0;
-    reservoir.target = 0.0;
-    reservoir.sample_count = 0u;
-    reservoir.depth = depth;
-    reservoir.packed_normal_rm = restir_pack_normal_rm(normal_rm);
-    reservoir.view_depth = 0.0;
-    return reservoir;
-}
-
-uint restir_random_uint(inout uint state)
+uint random_uint(inout uint state)
 {
     state = state * 747796405u + 2891336453u;
     uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
     return (word >> 22u) ^ word;
 }
 
-float restir_random_float(inout uint state)
+float random_float(inout uint state)
 {
-    return float(restir_random_uint(state) & 0x00ffffffu) / 16777216.0;
+    return float(random_uint(state) >> 8u) * (1.0 / 16777216.0);
 }
 
-uint restir_seed(uint2 pixel, uint frame_number, uint salt)
+uint random_light(inout uint state, uint light_count)
 {
-    uint state = pixel.x * 0x9e3779b9u ^ pixel.y * 0x85ebca6bu ^
-        frame_number * 0xc2b2ae35u ^ salt;
-    return restir_random_uint(state);
+    // Rejection avoids modulo bias for arbitrary light counts.
+    uint threshold = (0u - light_count) % light_count;
+    uint value;
+    do
+    {
+        value = random_uint(state);
+    }
+    while (value < threshold);
+    return value % light_count;
 }
 
-float3 restir_sample_position(RestirPointLight light, uint packed_uv)
+float3 reconstruct_position(float2 pixel_center, float depth, Frame frame)
 {
-    float2 uv = restir_unpack_uv(packed_uv);
+    float2 ndc = pixel_center / float2(frame.light_count_viewport.yz) * 2.0 - 1.0;
+    float4 world = mul(frame.inverse_view_projection, float4(ndc, depth, 1.0));
+    return world.xyz / world.w;
+}
+
+float3 sample_position(PointLight light, uint packed_uv)
+{
+    float2 uv = (float2(packed_uv & 0xffffu, packed_uv >> 16u) + 0.5) / 65536.0;
     float z = 1.0 - 2.0 * uv.x;
-    float azimuth = 2.0 * RESTIR_PI * uv.y;
+    float angle = 2.0 * PI * uv.y;
     float radial = sqrt(max(1.0 - z * z, 0.0));
-    float3 direction = float3(radial * cos(azimuth), radial * sin(azimuth), z);
-    return light.position_range.xyz + max(light.radius.x, 0.0) * direction;
+    return light.position_range.xyz + max(light.radius.x, 0.0) * float3(radial * cos(angle), radial * sin(angle), z);
 }
 
-float3 restir_fresnel(float v_dot_h, float3 f0)
+float ggx_g1(float n_dot_x, float alpha_squared)
 {
-    return f0 + (1.0 - f0) * pow(1.0 - saturate(v_dot_h), 5.0);
-}
-
-float restir_ggx_g1(float n_dot_x, float alpha_squared)
-{
-    float denominator = n_dot_x + sqrt(
-        alpha_squared + (1.0 - alpha_squared) * n_dot_x * n_dot_x
-    );
+    float denominator = n_dot_x + sqrt(alpha_squared + (1.0 - alpha_squared) * n_dot_x * n_dot_x);
     return 2.0 * n_dot_x / max(denominator, 1e-6);
 }
 
-float3 restir_brdf(RestirSurface surface, float3 view_direction, float3 light_direction)
+float3 brdf(Surface surface, float3 view_direction, float3 light_direction)
 {
     float3 half_vector = normalize(view_direction + light_direction);
     float n_dot_v = saturate(dot(surface.normal, view_direction));
@@ -158,28 +109,21 @@ float3 restir_brdf(RestirSurface surface, float3 view_direction, float3 light_di
     float alpha = surface.roughness * surface.roughness;
     float alpha_squared = alpha * alpha;
     float denominator = n_dot_h * n_dot_h * (alpha_squared - 1.0) + 1.0;
-    float distribution = alpha_squared /
-        max(RESTIR_PI * denominator * denominator, 1e-7);
-    float geometry = restir_ggx_g1(n_dot_v, alpha_squared) *
-        restir_ggx_g1(n_dot_l, alpha_squared);
-    float3 fresnel = restir_fresnel(v_dot_h, f0);
-    float3 specular = distribution * geometry * fresnel /
-        max(4.0 * n_dot_v * n_dot_l, 1e-6);
-    float3 diffuse = (1.0 - fresnel) * (1.0 - surface.metallic) *
-        surface.base_color / RESTIR_PI;
+    float distribution = alpha_squared / max(PI * denominator * denominator, 1e-7);
+    float geometry = ggx_g1(n_dot_v, alpha_squared) * ggx_g1(n_dot_l, alpha_squared);
+    float3 fresnel = f0 + (1.0 - f0) * pow(1.0 - v_dot_h, 5.0);
+    float3 specular = distribution * geometry * fresnel / max(4.0 * n_dot_v * n_dot_l, 1e-6);
+    float3 diffuse = (1.0 - fresnel) * (1.0 - surface.metallic) * surface.base_color / PI;
     return diffuse + specular;
 }
 
-float3 restir_contribution(
-    RestirSurface surface,
-    float3 camera_position,
-    RestirPointLight light,
-    uint packed_uv)
+float3 contribution(Surface surface, float3 camera_position, PointLight light, uint packed_uv)
 {
-    float3 to_sample = restir_sample_position(light, packed_uv) - surface.position;
+    // UV parametrizes a soft-shadow sphere offset, not an emitting-area measure.
+    float3 to_sample = sample_position(light, packed_uv) - surface.position;
     float distance_squared = dot(to_sample, to_sample);
     float distance = sqrt(max(distance_squared, 1e-8));
-    if (distance >= light.position_range.w)
+    if (light.position_range.w <= 0.0 || distance >= light.position_range.w)
     {
         return float3(0.0);
     }
@@ -190,44 +134,118 @@ float3 restir_contribution(
     {
         return float3(0.0);
     }
-    float normalized_distance = distance / max(light.position_range.w, 1e-4);
+    float normalized_distance = distance / light.position_range.w;
     float range_falloff = saturate(1.0 - pow(normalized_distance, 4.0));
-    float attenuation = range_falloff * range_falloff /
-        max(distance_squared, 1e-4);
-    return restir_brdf(surface, view_direction, light_direction) *
-        light.color_intensity.rgb * light.color_intensity.w * attenuation * n_dot_l;
+    float attenuation = range_falloff * range_falloff / max(distance_squared, 1e-4);
+    return brdf(surface, view_direction, light_direction) * light.color_intensity.rgb * light.color_intensity.w * attenuation * n_dot_l;
 }
 
-float restir_target(float3 contribution)
+float target_pdf(Surface surface, Frame frame, PointLight light, uint packed_uv)
 {
-    return max(dot(max(contribution, 0.0), float3(0.2126, 0.7152, 0.0722)), 0.0);
+    float3 radiance = contribution(surface, frame.camera_position.xyz, light, packed_uv);
+    float target = dot(max(radiance, 0.0), float3(0.2126, 0.7152, 0.0722));
+    return isfinite(target) ? target : 0.0;
 }
 
-void restir_add(
-    inout RestirReservoir result,
-    inout float weight_sum,
-    uint light_index,
-    uint packed_uv,
-    float target,
-    float weight,
-    uint sample_count,
-    inout uint random_state)
+uint pack_normal_material(Surface surface)
 {
-    result.sample_count += sample_count;
-    weight_sum += weight;
-    if (weight > 0.0 && restir_random_float(random_state) * weight_sum < weight)
+    float3 normal = surface.normal / (abs(surface.normal.x) + abs(surface.normal.y) + abs(surface.normal.z));
+    float2 oct = normal.xy;
+    if (normal.z < 0.0)
     {
-        result.light_index = light_index;
-        result.packed_uv = packed_uv;
-        result.target = target;
+        oct = (1.0 - abs(oct.yx)) * float2(oct.x >= 0.0 ? 1.0 : -1.0, oct.y >= 0.0 ? 1.0 : -1.0);
+    }
+    uint2 packed_normal = uint2(round(saturate(oct * 0.5 + 0.5) * 255.0));
+    uint roughness = uint(round(surface.roughness * 255.0));
+    uint metallic = uint(round(surface.metallic * 255.0));
+    return packed_normal.x | (packed_normal.y << 8u) | (roughness << 16u) | (metallic << 24u);
+}
+
+float3 unpack_normal(uint packed)
+{
+    float2 oct = float2(packed & 0xffu, (packed >> 8u) & 0xffu) / 255.0 * 2.0 - 1.0;
+    float3 normal = float3(oct, 1.0 - abs(oct.x) - abs(oct.y));
+    float fold = max(-normal.z, 0.0);
+    normal.xy += float2(normal.x >= 0.0 ? -fold : fold, normal.y >= 0.0 ? -fold : fold);
+    return normalize(normal);
+}
+
+bool similar_surface(uint packed_normal_rm, float view_depth, Reservoir neighbor, float4 thresholds)
+{
+    if (neighbor.depth >= 1.0 || neighbor.view_depth <= 0.0 || !isfinite(neighbor.view_depth) || view_depth <= 0.0)
+    {
+        return false;
+    }
+    float roughness_delta = abs(float((packed_normal_rm >> 16u) & 0xffu) - float((neighbor.packed_normal_rm >> 16u) & 0xffu)) / 255.0;
+    float metallic_delta = abs(float(packed_normal_rm >> 24u) - float(neighbor.packed_normal_rm >> 24u)) / 255.0;
+    float normal_cosine = (packed_normal_rm & 0xffffu) == (neighbor.packed_normal_rm & 0xffffu)
+        ? 1.0 : dot(unpack_normal(packed_normal_rm), unpack_normal(neighbor.packed_normal_rm));
+    return abs(view_depth - neighbor.view_depth) <= thresholds.x * max(view_depth, neighbor.view_depth) &&
+        normal_cosine >= thresholds.y && roughness_delta <= thresholds.z && metallic_delta <= thresholds.w;
+}
+
+void discard_sample(inout Reservoir reservoir)
+{
+    // Empty reservoirs retain M, including those rejected by visibility.
+    reservoir.light_index = INVALID_LIGHT;
+    reservoir.packed_uv = 0u;
+    reservoir.weight = 0.0;
+    reservoir.target = 0.0;
+}
+
+void update_reservoir(
+    inout Reservoir reservoir, inout float weight_sum, uint light_index, uint packed_uv,
+    float target, float weight, uint sample_count, float random)
+{
+    reservoir.sample_count += sample_count;
+    if (weight <= 0.0 || !isfinite(weight))
+    {
+        return;
+    }
+    weight_sum += weight;
+    if (random * weight_sum < weight)
+    {
+        reservoir.light_index = light_index;
+        reservoir.packed_uv = packed_uv;
+        reservoir.target = target;
     }
 }
 
-void restir_finalize(inout RestirReservoir result, float weight_sum)
+void normalize_reservoir(inout Reservoir reservoir, float weight_sum)
 {
-    result.weight = result.target > 0.0 && result.sample_count > 0u
-        ? weight_sum / (float(result.sample_count) * result.target)
-        : 0.0;
+    if (reservoir.light_index == INVALID_LIGHT || reservoir.target <= 0.0 || reservoir.sample_count == 0u)
+    {
+        discard_sample(reservoir);
+        return;
+    }
+    // Paper Algorithm 4: biased normalization, without support/MIS correction.
+    reservoir.weight = weight_sum / float(reservoir.sample_count) / reservoir.target;
+    if (!isfinite(reservoir.weight) || reservoir.weight <= 0.0)
+    {
+        discard_sample(reservoir);
+    }
+}
+
+bool visible_to_sample(RaytracingAccelerationStructure tlas, Surface surface, PointLight light, uint packed_uv, float bias)
+{
+    float3 origin = surface.position + surface.normal * bias;
+    float3 to_sample = sample_position(light, packed_uv) - origin;
+    float distance = length(to_sample);
+    if (distance <= 2.0 * bias)
+    {
+        return true;
+    }
+    RayDesc ray;
+    ray.Origin = origin;
+    ray.Direction = to_sample / distance;
+    ray.TMin = bias;
+    ray.TMax = distance - bias;
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_FORCE_OPAQUE> query;
+    query.TraceRayInline(tlas, RAY_FLAG_NONE, 0xff, ray);
+    while (query.Proceed())
+    {
+    }
+    return query.CommittedStatus() == COMMITTED_NOTHING;
 }
 
 #endif

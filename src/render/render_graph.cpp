@@ -242,7 +242,8 @@ RenderGraph::RenderGraph(
 auto RenderGraph::create_image(
     std::string name,
     const ImageDesc& desc,
-    ResourceMultiplicity multiplicity
+    ResourceMultiplicity multiplicity,
+    std::array<float, 4> clear_color
 ) -> void {
     if (name.empty()) {
         throw std::invalid_argument("image name cannot be empty!");
@@ -260,7 +261,7 @@ auto RenderGraph::create_image(
 
     const bool inserted = declared_images_.try_emplace(
         name,
-        DeclaredImage{desc, multiplicity}
+        DeclaredImage{desc, multiplicity, clear_color}
     ).second;
     if (!inserted) {
         throw std::invalid_argument(
@@ -1033,10 +1034,13 @@ auto RenderGraph::record(vk::raii::CommandBuffer& primary_command_buffer) -> voi
 
                 vk::ClearValue clear_value{};
                 if (usage == ImageUsage::ColorAttachment) {
-                    clear_value.color.float32[0] = 0.01F;
-                    clear_value.color.float32[1] = 0.015F;
-                    clear_value.color.float32[2] = 0.025F;
-                    clear_value.color.float32[3] = 1.0F;
+                    const std::array default_clear_color{0.01F, 0.015F, 0.025F, 1.0F};
+                    const auto declared = declared_images_.find(resource_name);
+                    const auto& clear_color = declared != declared_images_.end()
+                        ? declared->second.clear_color
+                        : default_clear_color;
+                    std::copy(clear_color.begin(), clear_color.end(),
+                        clear_value.color.float32.begin());
                     attachment.setClearValue(clear_value);
                     color_attachments.push_back(attachment);
                 }

@@ -46,8 +46,8 @@ rule("shader.spirv")
             sourcefile
         })
         batchcmds:add_depfiles(sourcefile)
-        for _, header in ipairs(os.files(path.join(os.projectdir(), "shaders/common/**.slangh"))) do
-            batchcmds:add_depfiles(header)
+        if path.basename(sourcefile):find("restir_di", 1, true) or path.basename(sourcefile) == "direct_light_fragment" then
+            batchcmds:add_depfiles("shaders/common/restir_di.slangh")
         end
         batchcmds:set_depmtime(os.mtime(output_file))
         batchcmds:set_depcache(target:dependfile(output_file))
