@@ -14,7 +14,10 @@ class TlasBuildPass;
 class DirectLightPass final : public RenderPass {
 public:
     inline static constexpr std::string_view pass_name = "direct_light";
-    inline static constexpr std::string_view output_resource = "backbuffer";
+    inline static constexpr std::string_view diffuse_resource = "direct_light_diffuse";
+    inline static constexpr std::string_view specular_resource = "direct_light_specular";
+
+    static auto declare_resources(const Device& device, RenderGraph& render_graph, vk::Extent2D extent) -> void;
 
     DirectLightPass(
         const Device& device,

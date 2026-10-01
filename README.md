@@ -189,6 +189,7 @@ th1nk2r_renderer/
 │  └─ compute/                     # 计算着色器
 ├─ src/                            # 与 include/ 对应的实现
 ├─ bin/                            # 可执行文件、SPIR-V 与运行时资产（构建生成）
+├─ xmake/rules/                    # NRD 依赖与 Slang 编译规则
 ├─ LICENSE
 └─ xmake.lua
 ```
@@ -213,7 +214,7 @@ xmake --version
 slangc -version
 ```
 
-GLFW、GLM、VMA、stb、Assimp 与 Vulkan SDK 已在 `xmake.lua` 中声明，Xmake 会在首次配置时解析依赖，因此首次构建可能需要网络连接。
+GLFW、GLM、VMA、stb、Assimp、CMake 与 Vulkan SDK 已在 `xmake.lua` 中声明。首次构建还会从 NVIDIA 仓库获取固定版本的 NRD 源码，编译 NRD/NRI，并将 SDK 放在 `build/nrd-src/`；因此首次构建需要网络连接。`xmake run` 会自动构建，首次准备 NRD 时会显示下载、配置和编译进度，可能需要几分钟。删除 `build/` 和 `bin/` 后再次运行 `xmake` 会重新生成这些文件。已有 SDK 可通过同时设置 `NRD_SDK_ROOT` 和 `NRI_SDK_ROOT` 使用。
 
 ## 构建与运行
 
@@ -228,7 +229,6 @@ Debug 构建：
 
 ```powershell
 xmake f -m debug
-xmake
 xmake run th1nk2r_renderer
 ```
 
@@ -236,7 +236,6 @@ Release 构建：
 
 ```powershell
 xmake f -m release
-xmake
 xmake run th1nk2r_renderer
 ```
 
@@ -257,7 +256,7 @@ Push-Location .\bin
 Pop-Location
 ```
 
-> `xmake.lua` 会在每次构建后调用 `slangc`，以 `main` 为入口将 `shaders/vertex`、`shaders/fragment` 和 `shaders/compute` 中的 `.slang`/`.hlsl` 编译到 `bin/spv/`，并将 `assets/` 复制到 `bin/assets/`。
+> `xmake/rules/shader.lua` 按需调用 `slangc`，以 `main` 为入口将 `shaders/vertex`、`shaders/fragment` 和 `shaders/compute` 中的 `.slang` 编译到 `bin/spv/`。`xmake/rules/nrd.lua` 负责准备 NRD/NRI SDK；主 `xmake.lua` 将 `assets/` 复制到 `bin/assets/`。
 
 ## 操作方式
 

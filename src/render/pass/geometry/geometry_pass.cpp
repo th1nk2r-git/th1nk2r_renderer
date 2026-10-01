@@ -734,6 +734,9 @@ auto GeometryPass::record() -> vk::CommandBuffer {
 
     auto& command_buffer = slot.command_buffer;
     command_buffer.begin(begin_info);
+#ifndef NDEBUG
+    insert_debug_marker(command_buffer, name().data());
+#endif
     command_buffer.bindPipeline(
         vk::PipelineBindPoint::eGraphics,
         *impl_->pipeline

@@ -384,6 +384,9 @@ auto TlasBuildPass::record() -> vk::CommandBuffer {
         .setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit)
         .setPInheritanceInfo(&inheritance);
     slot.command_buffer.begin(begin_info);
+#ifndef NDEBUG
+    insert_debug_marker(slot.command_buffer, name().data());
+#endif
 
     if (slot.operation == TlasOperation::None) {
         slot.command_buffer.end();

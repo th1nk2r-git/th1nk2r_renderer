@@ -159,7 +159,7 @@ DeviceContext::DeviceContext(const Window& window)
           create_debug_messenger(instance_, validation_enabled_)
       ),
       surface_(create_surface(instance_, window)),
-      device_(instance_, surface_),
+      device_(instance_, surface_, validation_enabled_),
       allocator_(instance_, device_),
       buffer_uploader_(device_, allocator_),
       image_uploader_(device_, allocator_) {}

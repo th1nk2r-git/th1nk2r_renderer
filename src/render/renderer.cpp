@@ -7,6 +7,8 @@
 
 #include "render/pass/culling/culling_pass.hpp"
 #include "render/pass/direct_light/direct_light_pass.hpp"
+#include "render/pass/direct_light_composite/direct_light_composite_pass.hpp"
+#include "render/pass/direct_light_denoise/direct_light_denoise_pass.hpp"
 #include "render/pass/geometry/geometry_pass.hpp"
 #include "render/pass/restir_di/restir_di_pass.hpp"
 #include "render/pass/tlas_build/tlas_build_pass.hpp"
@@ -70,6 +72,8 @@ auto Renderer::create_render_pass() -> void {
         tlas_build_pass_reference,
         restir_pass_reference
     ));
+    render_passes_.push_back(std::make_unique<DirectLightDenoisePass>(device_context_, render_graph_, swapchain_.extent()));
+    render_passes_.push_back(std::make_unique<DirectLightCompositePass>(device_context_.device(), render_graph_, restir_pass_reference));
 }
 
 auto Renderer::create_render_resources() -> void {
@@ -80,6 +84,7 @@ auto Renderer::create_render_resources() -> void {
         swapchain_.extent()
     );
     RestirDiPass::declare_resources(device_context_.device(), render_graph_, swapchain_.extent());
+    DirectLightPass::declare_resources(device_context_.device(), render_graph_, swapchain_.extent());
 }
 
 auto Renderer::init_render_pass() -> void {
@@ -103,7 +108,7 @@ auto Renderer::build_render_graph() -> void {
         render_pass->configure(render_graph_);
     }
 
-    render_graph_.set_output(DirectLightPass::output_resource);
+    render_graph_.set_output(DirectLightCompositePass::output_resource);
     render_graph_.compile();
 }
 

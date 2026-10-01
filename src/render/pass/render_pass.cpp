@@ -3,6 +3,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include "gfx/device/device.hpp"
+
 RenderPass::RenderPass(
     std::string name,
     const Device& device,
@@ -17,3 +19,19 @@ RenderPass::RenderPass(
 
 auto RenderPass::prepare(const Scene&) -> void {
 }
+
+#ifndef NDEBUG
+auto RenderPass::insert_debug_marker(
+    const vk::raii::CommandBuffer& command_buffer,
+    const char* name
+) const -> void {
+    if (!device_.debug_utils_enabled() ||
+        command_buffer.getDispatcher()->vkCmdInsertDebugUtilsLabelEXT == nullptr) {
+        return;
+    }
+
+    vk::DebugUtilsLabelEXT label{};
+    label.pLabelName = name;
+    command_buffer.insertDebugUtilsLabelEXT(label);
+}
+#endif

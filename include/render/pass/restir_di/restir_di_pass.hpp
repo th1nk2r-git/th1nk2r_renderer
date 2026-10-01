@@ -21,7 +21,7 @@ public:
     inline static constexpr uint32_t reservoir_size = 32;
 
     struct Settings {
-        uint32_t candidate_count = 32;
+        uint32_t candidate_count = 1;
         uint32_t temporal_history_length = 5; // History M is capped at candidate_count * this value.
         uint32_t spatial_neighbor_count = 5;
         uint32_t spatial_radius = 30; // Pixels.
@@ -30,8 +30,8 @@ public:
         float roughness_threshold = 0.2F;
         float metallic_threshold = 0.2F;
         float ray_bias = 0.01F;
-        bool temporal_reuse = true;
-        bool spatial_reuse = false;
+        bool temporal_reuse = false;
+        bool spatial_reuse = true;
 
         auto operator==(const Settings&) const -> bool = default;
     };

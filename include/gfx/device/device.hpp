@@ -9,7 +9,8 @@ class Device {
 public:
     Device(
         const vk::raii::Instance& instance,
-        const vk::raii::SurfaceKHR& surface
+        const vk::raii::SurfaceKHR& surface,
+        bool debug_utils_enabled
     );
     ~Device() = default;
 
@@ -43,6 +44,10 @@ public:
         return graphics_queue_;
     }
 
+    auto debug_utils_enabled() const noexcept -> bool {
+        return debug_utils_enabled_;
+    }
+
     // return the present family
     auto present_queue() const -> const vk::raii::Queue& {
         return present_queue_;
@@ -59,7 +64,7 @@ private:
         QueueFamilies queue_families;
     };
 
-    explicit Device(SelectedPhysicalDevice selected);
+    Device(SelectedPhysicalDevice selected, bool debug_utils_enabled);
 
     vk::raii::PhysicalDevice physical_device_ = nullptr;
     uint32_t graphics_family_ = 0;
@@ -68,6 +73,7 @@ private:
 
     vk::raii::Queue graphics_queue_ = nullptr;
     vk::raii::Queue present_queue_ = nullptr;
+    bool debug_utils_enabled_ = false;
 
     static auto select_physical_device(
         const vk::raii::Instance& instance,

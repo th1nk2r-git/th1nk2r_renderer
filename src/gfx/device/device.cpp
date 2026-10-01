@@ -20,6 +20,9 @@ namespace {
         VkPhysicalDeviceVulkan13Features vulkan13_features{};
         vulkan13_features.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        VkPhysicalDeviceVulkan14Features vulkan14_features{};
+        vulkan14_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
         VkPhysicalDeviceAccelerationStructureFeaturesKHR
             acceleration_structure_features{};
         acceleration_structure_features.sType =
@@ -29,23 +32,32 @@ namespace {
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
         vulkan11_features.pNext = &vulkan12_features;
         vulkan12_features.pNext = &vulkan13_features;
-        vulkan13_features.pNext = &acceleration_structure_features;
+        vulkan13_features.pNext = &vulkan14_features;
+        vulkan14_features.pNext = &acceleration_structure_features;
         acceleration_structure_features.pNext = &ray_query_features;
         VkPhysicalDeviceFeatures2 features{};
         features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         features.pNext = &vulkan11_features;
         vkGetPhysicalDeviceFeatures2(*physical_device, &features);
+        VkFormatProperties normal_format{};
+        vkGetPhysicalDeviceFormatProperties(*physical_device, VK_FORMAT_A2B10G10R10_UNORM_PACK32, &normal_format);
         return features.features.imageCubeArray == VK_TRUE &&
             features.features.samplerAnisotropy == VK_TRUE &&
             features.features.multiDrawIndirect == VK_TRUE &&
             features.features.drawIndirectFirstInstance == VK_TRUE &&
             features.features
                 .shaderSampledImageArrayDynamicIndexing == VK_TRUE &&
+            features.features.shaderStorageImageExtendedFormats == VK_TRUE &&
             vulkan11_features.shaderDrawParameters == VK_TRUE &&
             vulkan12_features.drawIndirectCount == VK_TRUE &&
             vulkan12_features.runtimeDescriptorArray == VK_TRUE &&
+            vulkan12_features.descriptorBindingPartiallyBound == VK_TRUE &&
             vulkan12_features.bufferDeviceAddress == VK_TRUE &&
             vulkan13_features.dynamicRendering == VK_TRUE &&
+            vulkan13_features.synchronization2 == VK_TRUE &&
+            vulkan14_features.pushDescriptor == VK_TRUE &&
+            (normal_format.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0 &&
+            (normal_format.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0 &&
             acceleration_structure_features.accelerationStructure == VK_TRUE &&
             ray_query_features.rayQuery == VK_TRUE;
     }
@@ -53,17 +65,19 @@ namespace {
 
 Device::Device(
     const vk::raii::Instance& instance,
-    const vk::raii::SurfaceKHR& surface
+    const vk::raii::SurfaceKHR& surface,
+    bool debug_utils_enabled
 )
-    : Device(select_physical_device(instance, surface)) {}
+    : Device(select_physical_device(instance, surface), debug_utils_enabled) {}
 
-Device::Device(SelectedPhysicalDevice selected)
+Device::Device(SelectedPhysicalDevice selected, bool debug_utils_enabled)
     : physical_device_(std::move(selected.physical_device)),
       graphics_family_(selected.queue_families.graphics),
       present_family_(selected.queue_families.present),
       logical_device_(create_logical_device(physical_device_, selected.queue_families)),
       graphics_queue_(logical_device_.getQueue(graphics_family_, 0)),
-      present_queue_(logical_device_.getQueue(present_family_, 0)) {}
+      present_queue_(logical_device_.getQueue(present_family_, 0)),
+      debug_utils_enabled_(debug_utils_enabled) {}
 
 auto Device::select_physical_device(
     const vk::raii::Instance& instance,
@@ -176,16 +190,20 @@ auto Device::create_logical_device(
         .setSamplerAnisotropy(true)
         .setMultiDrawIndirect(true)
         .setDrawIndirectFirstInstance(true)
-        .setShaderSampledImageArrayDynamicIndexing(true);
+        .setShaderSampledImageArrayDynamicIndexing(true)
+        .setShaderStorageImageExtendedFormats(true);
     vk::PhysicalDeviceVulkan11Features required_vulkan11_features{};
     required_vulkan11_features.setShaderDrawParameters(true);
     vk::PhysicalDeviceVulkan12Features required_vulkan12_features{};
     required_vulkan12_features
         .setDrawIndirectCount(true)
         .setRuntimeDescriptorArray(true)
+        .setDescriptorBindingPartiallyBound(true)
         .setBufferDeviceAddress(true);
     vk::PhysicalDeviceVulkan13Features required_vulkan13_features{};
-    required_vulkan13_features.setDynamicRendering(true);
+    required_vulkan13_features.setDynamicRendering(true).setSynchronization2(true);
+    vk::PhysicalDeviceVulkan14Features required_vulkan14_features{};
+    required_vulkan14_features.setPushDescriptor(true);
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR
         required_acceleration_structure_features{};
     required_acceleration_structure_features.setAccelerationStructure(true);
@@ -193,7 +211,8 @@ auto Device::create_logical_device(
     required_ray_query_features.setRayQuery(true);
     required_vulkan11_features.setPNext(&required_vulkan12_features);
     required_vulkan12_features.setPNext(&required_vulkan13_features);
-    required_vulkan13_features.setPNext(
+    required_vulkan13_features.setPNext(&required_vulkan14_features);
+    required_vulkan14_features.setPNext(
         &required_acceleration_structure_features
     );
     required_acceleration_structure_features.setPNext(

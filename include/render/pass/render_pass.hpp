@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 
 class Device;
 class RenderGraph;
@@ -34,6 +34,13 @@ protected:
         const Device& device,
         RenderGraph& render_graph
     );
+
+#ifndef NDEBUG
+    auto insert_debug_marker(
+        const vk::raii::CommandBuffer& command_buffer,
+        const char* name
+    ) const -> void;
+#endif
 
     const Device& device_;
     RenderGraph& render_graph_;

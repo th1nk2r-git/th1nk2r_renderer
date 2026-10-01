@@ -371,6 +371,9 @@ auto RestirDiPass::record() -> vk::CommandBuffer {
     begin_info.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit).setPInheritanceInfo(&inheritance);
     auto& command_buffer = slot.command_buffer;
     command_buffer.begin(begin_info);
+#ifndef NDEBUG
+    insert_debug_marker(command_buffer, name().data());
+#endif
 
     // The shared final reservoir is read as history before spatial reuse overwrites it.
     const std::array start_barriers{

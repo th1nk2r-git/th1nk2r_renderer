@@ -4,6 +4,7 @@ set_languages("c++20")
 set_toolchains("msvc")
 
 add_rules("mode.debug", "mode.release")
+set_policy("run.autobuild", true)
 
 add_requires(
     "vulkansdk",
@@ -11,51 +12,17 @@ add_requires(
     "glm",
     "vulkan-memory-allocator",
     "stb 2026.03.18",
-    "assimp 6.0.4"
+    "assimp 6.0.4",
+    "cmake"
 )
 
-rule("shader.spirv")
-    set_extensions(".slang")
-
-    on_buildcmd_file(function (target, batchcmds, sourcefile, opt)
-        local stage = path.filename(path.directory(sourcefile))
-        assert(
-            stage == "vertex" or
-            stage == "fragment" or
-            stage == "compute",
-            "shader must be placed in shaders/vertex, shaders/fragment, or shaders/compute"
-        )
-
-        local output_file = path.join(
-            target:targetdir(),
-            "spv",
-            path.basename(sourcefile) .. ".spv"
-        )
-        batchcmds:show_progress(
-            opt.progress,
-            "${color.build.object}compiling.shader %s",
-            sourcefile
-        )
-        batchcmds:mkdir(path.directory(output_file))
-        batchcmds:vrunv("slangc", {
-            "-target", "spirv",
-            "-stage", stage,
-            "-entry", "main",
-            "-lang", "slang",
-            "-o", output_file,
-            sourcefile
-        })
-        batchcmds:add_depfiles(sourcefile)
-        if path.basename(sourcefile):find("restir_di", 1, true) or path.basename(sourcefile) == "direct_light_fragment" then
-            batchcmds:add_depfiles("shaders/common/restir_di.slangh")
-        end
-        batchcmds:set_depmtime(os.mtime(output_file))
-        batchcmds:set_depcache(target:dependfile(output_file))
-    end)
+includes("xmake/rules/nrd.lua")
+includes("xmake/rules/shader.lua")
 
 target("th1nk2r_renderer")
     set_kind("binary")
     set_targetdir("bin")
+    add_rules("nrd.sdk")
     add_defines(
         "VULKAN_HPP_NO_STRUCT_CONSTRUCTORS",
         "GLM_FORCE_RADIANS",
@@ -70,7 +37,8 @@ target("th1nk2r_renderer")
         "glm",
         "vulkan-memory-allocator",
         "stb",
-        "assimp"
+        "assimp",
+        "cmake"
     )
 
     after_build(function (target)

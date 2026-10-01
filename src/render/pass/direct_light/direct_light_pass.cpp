@@ -73,7 +73,10 @@ namespace {
         desc.vertex_shader = &vertex_shader;
         desc.fragment_shader = &fragment_shader;
         desc.layout = &layout;
-        desc.color_attachment_formats = {render_graph.image(DirectLightPass::output_resource).format()};
+        desc.color_attachment_formats = {
+            render_graph.image(DirectLightPass::diffuse_resource).format(),
+            render_graph.image(DirectLightPass::specular_resource).format()
+        };
         desc.cull_mode = vk::CullModeFlagBits::eNone;
         desc.depth_test_enable = false;
         desc.depth_write_enable = false;
@@ -181,6 +184,27 @@ DirectLightPass::DirectLightPass(
 
 DirectLightPass::~DirectLightPass() = default;
 
+auto DirectLightPass::declare_resources(const Device& device, RenderGraph& render_graph, vk::Extent2D extent) -> void {
+    if (extent.width == 0 || extent.height == 0) {
+        throw std::invalid_argument("direct-light resources require a non-zero extent");
+    }
+
+    constexpr auto format = vk::Format::eR16G16B16A16Sfloat;
+    constexpr auto required_features = vk::FormatFeatureFlagBits::eColorAttachment | vk::FormatFeatureFlagBits::eSampledImage;
+    const auto features = device.physical_device().getFormatProperties(format).optimalTilingFeatures;
+    if ((features & required_features) != required_features) {
+        throw std::runtime_error("RGBA16F direct-light attachments are unsupported");
+    }
+
+    const ImageDesc desc{
+        .format = format,
+        .extent = vk::Extent3D{extent.width, extent.height, 1},
+        .samples = vk::SampleCountFlagBits::e1
+    };
+    render_graph.create_image(std::string{diffuse_resource}, desc, ResourceMultiplicity::PerFrame, {0, 0, 0, 0});
+    render_graph.create_image(std::string{specular_resource}, desc, ResourceMultiplicity::PerFrame, {0, 0, 0, 0});
+}
+
 auto DirectLightPass::init() -> void {
     if (impl_->initialized) {
         throw std::logic_error("direct-light pass is already initialized");
@@ -261,7 +285,8 @@ auto DirectLightPass::configure(RenderGraph& render_graph) -> void {
     render_graph.set_image_usage(name(), GeometryPass::normal_roughness_resource, ImageUsage::FragmentSampled);
     render_graph.set_image_usage(name(), GeometryPass::depth_resource, ImageUsage::FragmentSampled);
     render_graph.set_image_usage(name(), GeometryPass::emissive_metallic_resource, ImageUsage::FragmentSampled);
-    render_graph.set_image_usage(name(), output_resource, ImageUsage::ColorAttachment);
+    render_graph.set_image_usage(name(), diffuse_resource, ImageUsage::ColorAttachment);
+    render_graph.set_image_usage(name(), specular_resource, ImageUsage::ColorAttachment);
 }
 
 auto DirectLightPass::prepare(const Scene&) -> void {
@@ -296,7 +321,10 @@ auto DirectLightPass::record() -> vk::CommandBuffer {
     auto& slot = impl_->command_slots.at(frame_index);
     slot.pool.reset();
 
-    const std::array color_formats{render_graph_.image(output_resource).format()};
+    const std::array color_formats{
+        render_graph_.image(diffuse_resource).format(),
+        render_graph_.image(specular_resource).format()
+    };
     vk::CommandBufferInheritanceRenderingInfo rendering_inheritance{};
     rendering_inheritance
         .setColorAttachmentFormats(color_formats)
@@ -313,9 +341,12 @@ auto DirectLightPass::record() -> vk::CommandBuffer {
 
     auto& command_buffer = slot.command_buffer;
     command_buffer.begin(begin_info);
+#ifndef NDEBUG
+    insert_debug_marker(command_buffer, name().data());
+#endif
     command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *impl_->pipeline);
 
-    const auto extent_3d = render_graph_.image(output_resource).extent();
+    const auto extent_3d = render_graph_.image(diffuse_resource).extent();
     const vk::Extent2D extent{extent_3d.width, extent_3d.height};
     command_buffer.setViewport(
         0,
