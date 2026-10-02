@@ -42,6 +42,8 @@ rule("shader.spirv")
         if path.basename(sourcefile) == "direct_light_composite_fragment" then
             batchcmds:add_depfiles("shaders/common/restir_di.slangh")
             batchcmds:add_depfiles("shaders/common/direct_light_nrd.slangh")
+            batchcmds:add_depfiles(path.join(nrd_shaders, "NRD.hlsli"))
+            batchcmds:add_depfiles(path.join(nrd_shaders, "NRDConfig.hlsli"))
         end
         if path.basename(sourcefile) == "direct_light_denoise" then
             batchcmds:add_depfiles(path.join(nrd_shaders, "NRD.hlsli"))

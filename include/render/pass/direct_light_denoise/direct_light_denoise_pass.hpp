@@ -16,18 +16,22 @@ public:
     inline static constexpr std::string_view pass_name = "direct_light_denoise";
     inline static constexpr std::string_view diffuse_resource = "direct_light_diffuse_denoised";
     inline static constexpr std::string_view specular_resource = "direct_light_specular_denoised";
+    inline static constexpr std::string_view diffuse_view_z_resource = "direct_light_diffuse_view_z";
+    inline static constexpr std::string_view diffuse_normal_roughness_resource = "direct_light_diffuse_normal_roughness";
 
     struct Settings {
-        nrd::RelaxSettings relax{};
+        nrd::RelaxSettings diffuse_relax{};
+        nrd::RelaxSettings specular_relax{};
         float denoising_range = 500000.0F;
 
         Settings() {
-            relax.atrousIterationNum = 1;
-            relax.diffusePrepassBlurRadius = 30.0F;
-            relax.specularPrepassBlurRadius = 50.0F;
-            relax.diffuseMaxAccumulatedFrameNum = 30;
-            relax.specularMaxAccumulatedFrameNum = 30;
-            relax.minMaterialForDiffuse = 0.0F;
+            diffuse_relax.atrousIterationNum = 1;
+            diffuse_relax.diffusePrepassBlurRadius = 30.0F;
+            diffuse_relax.specularPrepassBlurRadius = 50.0F;
+            diffuse_relax.diffuseMaxAccumulatedFrameNum = 30;
+            diffuse_relax.specularMaxAccumulatedFrameNum = 30;
+            diffuse_relax.minMaterialForDiffuse = 0.0F;
+            specular_relax = diffuse_relax;
         }
     };
 

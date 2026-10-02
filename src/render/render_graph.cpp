@@ -20,6 +20,7 @@ namespace {
             return vk::PipelineStageFlagBits::eEarlyFragmentTests |
                 vk::PipelineStageFlagBits::eLateFragmentTests;
         case ImageUsage::FragmentSampled:
+        case ImageUsage::FragmentStorageWrite:
             return vk::PipelineStageFlagBits::eFragmentShader;
         case ImageUsage::ComputeSampled:
         case ImageUsage::ComputeStorageRead:
@@ -46,6 +47,8 @@ namespace {
         case ImageUsage::ComputeSampled:
         case ImageUsage::ComputeStorageRead:
             return vk::AccessFlagBits::eShaderRead;
+        case ImageUsage::FragmentStorageWrite:
+            return vk::AccessFlagBits::eShaderWrite;
         case ImageUsage::ComputeStorageWrite:
             return vk::AccessFlagBits::eShaderRead |
                 vk::AccessFlagBits::eShaderWrite;
@@ -70,6 +73,7 @@ namespace {
             return vk::ImageLayout::eShaderReadOnlyOptimal;
         case ImageUsage::ComputeStorageRead:
         case ImageUsage::ComputeStorageWrite:
+        case ImageUsage::FragmentStorageWrite:
             return vk::ImageLayout::eGeneral;
         case ImageUsage::TransferSource:
             return vk::ImageLayout::eTransferSrcOptimal;
@@ -92,6 +96,7 @@ namespace {
             return vk::ImageUsageFlagBits::eSampled;
         case ImageUsage::ComputeStorageRead:
         case ImageUsage::ComputeStorageWrite:
+        case ImageUsage::FragmentStorageWrite:
             return vk::ImageUsageFlagBits::eStorage;
         case ImageUsage::TransferSource:
             return vk::ImageUsageFlagBits::eTransferSrc;

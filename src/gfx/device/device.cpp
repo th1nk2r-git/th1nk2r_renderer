@@ -48,6 +48,7 @@ namespace {
             features.features
                 .shaderSampledImageArrayDynamicIndexing == VK_TRUE &&
             features.features.shaderStorageImageExtendedFormats == VK_TRUE &&
+            features.features.fragmentStoresAndAtomics == VK_TRUE &&
             vulkan11_features.shaderDrawParameters == VK_TRUE &&
             vulkan12_features.drawIndirectCount == VK_TRUE &&
             vulkan12_features.runtimeDescriptorArray == VK_TRUE &&
@@ -192,6 +193,7 @@ auto Device::create_logical_device(
         .setDrawIndirectFirstInstance(true)
         .setShaderSampledImageArrayDynamicIndexing(true)
         .setShaderStorageImageExtendedFormats(true);
+    required_features.setFragmentStoresAndAtomics(true);
     vk::PhysicalDeviceVulkan11Features required_vulkan11_features{};
     required_vulkan11_features.setShaderDrawParameters(true);
     vk::PhysicalDeviceVulkan12Features required_vulkan12_features{};

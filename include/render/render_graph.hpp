@@ -28,6 +28,7 @@ enum class ImageUsage {
     ColorAttachment,
     DepthAttachment,
     FragmentSampled,
+    FragmentStorageWrite,
     ComputeSampled,
     ComputeStorageRead,
     ComputeStorageWrite,

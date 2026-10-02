@@ -34,6 +34,8 @@
 namespace {
     constexpr uint32_t group_size = 8;
     constexpr nrd::Identifier relax_id = 0;
+    constexpr uint32_t diffuse_index = 0;
+    constexpr uint32_t specular_index = 1;
 
     struct PushParams {
         std::array<uint32_t, 4> viewport{};
@@ -44,6 +46,7 @@ namespace {
         Image view_z;
         Image motion;
         Image normal_roughness;
+        Image diffuse_motion;
         vk::raii::DescriptorSet descriptor_set = nullptr;
         vk::raii::CommandPool command_pool = nullptr;
         vk::raii::CommandBuffer command_buffer = nullptr;
@@ -68,7 +71,7 @@ namespace {
     }
 
     auto create_layout(const Device& device) -> vk::raii::DescriptorSetLayout {
-        std::array<vk::DescriptorSetLayoutBinding, 7> bindings{};
+        std::array<vk::DescriptorSetLayoutBinding, 10> bindings{};
         for (uint32_t index = 0; index < bindings.size(); ++index) {
             bindings[index].setBinding(index).setDescriptorType(index < 4 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage)
                 .setDescriptorCount(1).setStageFlags(vk::ShaderStageFlagBits::eCompute);
@@ -123,7 +126,7 @@ struct DirectLightDenoisePass::Impl {
     vk::raii::Pipeline pipeline = nullptr;
     vk::raii::DescriptorPool descriptor_pool = nullptr;
     std::vector<FrameSlot> slots;
-    nrd::Integration integration;
+    std::array<nrd::Integration, 2> integrations;
     glm::mat4 previous_view{1.0F};
     glm::mat4 previous_projection{1.0F};
     uint32_t frame_index = 0;
@@ -138,13 +141,25 @@ DirectLightDenoisePass::DirectLightDenoisePass(const DeviceContext& device_conte
 DirectLightDenoisePass::~DirectLightDenoisePass() = default;
 
 auto DirectLightDenoisePass::configure(RenderGraph& render_graph) -> void {
-    const ImageDesc output{
+    const vk::Extent3D diffuse_extent{
+        impl_->extent.width / 2 + impl_->extent.width % 2,
+        impl_->extent.height / 2 + impl_->extent.height % 2,
+        1
+    };
+    const ImageDesc diffuse_output{
         .format = vk::Format::eR16G16B16A16Sfloat,
-        .extent = vk::Extent3D{impl_->extent.width, impl_->extent.height, 1},
+        .extent = diffuse_extent,
         .usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled
     };
-    render_graph.create_image(std::string{diffuse_resource}, output, ResourceMultiplicity::PerFrame);
-    render_graph.create_image(std::string{specular_resource}, output, ResourceMultiplicity::PerFrame);
+    ImageDesc specular_output = diffuse_output;
+    specular_output.extent = vk::Extent3D{impl_->extent.width, impl_->extent.height, 1};
+    render_graph.create_image(std::string{diffuse_resource}, diffuse_output, ResourceMultiplicity::PerFrame);
+    render_graph.create_image(std::string{specular_resource}, specular_output, ResourceMultiplicity::PerFrame);
+    ImageDesc guide = diffuse_output;
+    guide.format = vk::Format::eR32Sfloat;
+    render_graph.create_image(std::string{diffuse_view_z_resource}, guide, ResourceMultiplicity::PerFrame);
+    guide.format = vk::Format::eA2B10G10R10UnormPack32;
+    render_graph.create_image(std::string{diffuse_normal_roughness_resource}, guide, ResourceMultiplicity::PerFrame);
 
     render_graph.add_dependency(name(), DirectLightPass::pass_name);
     for (const auto resource : {GeometryPass::depth_resource, GeometryPass::motion_resource, GeometryPass::normal_roughness_resource,
@@ -154,6 +169,8 @@ auto DirectLightDenoisePass::configure(RenderGraph& render_graph) -> void {
     }
     render_graph.set_image_usage(name(), diffuse_resource, ImageUsage::ComputeStorageWrite);
     render_graph.set_image_usage(name(), specular_resource, ImageUsage::ComputeStorageWrite);
+    render_graph.set_image_usage(name(), diffuse_view_z_resource, ImageUsage::ComputeStorageWrite);
+    render_graph.set_image_usage(name(), diffuse_normal_roughness_resource, ImageUsage::ComputeStorageWrite);
 }
 
 auto DirectLightDenoisePass::init() -> void {
@@ -199,7 +216,7 @@ auto DirectLightDenoisePass::init() -> void {
 
     const std::array pool_sizes{
         vk::DescriptorPoolSize{vk::DescriptorType::eSampledImage, frame_count * 4},
-        vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, frame_count * 3}
+        vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, frame_count * 6}
     };
     vk::DescriptorPoolCreateInfo pool_info{};
     pool_info.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet).setMaxSets(frame_count).setPoolSizes(pool_sizes);
@@ -215,6 +232,8 @@ auto DirectLightDenoisePass::init() -> void {
         slot.view_z = guide_image(impl_->context, vk::Format::eR32Sfloat, extent);
         slot.motion = guide_image(impl_->context, vk::Format::eR16G16B16A16Sfloat, extent);
         slot.normal_roughness = guide_image(impl_->context, vk::Format::eA2B10G10R10UnormPack32, extent);
+        const auto diffuse_extent = render_graph_.image(DirectLightPass::diffuse_resource).extent();
+        slot.diffuse_motion = guide_image(impl_->context, vk::Format::eR16G16B16A16Sfloat, diffuse_extent);
         slot.descriptor_set = std::move(sets[index]);
 
         const std::array images{
@@ -224,9 +243,12 @@ auto DirectLightDenoisePass::init() -> void {
             image_info(render_graph_.image(GeometryPass::emissive_metallic_resource, index), vk::ImageLayout::eShaderReadOnlyOptimal),
             image_info(slot.view_z, vk::ImageLayout::eGeneral),
             image_info(slot.motion, vk::ImageLayout::eGeneral),
-            image_info(slot.normal_roughness, vk::ImageLayout::eGeneral)
+            image_info(slot.normal_roughness, vk::ImageLayout::eGeneral),
+            image_info(render_graph_.image(diffuse_view_z_resource, index), vk::ImageLayout::eGeneral),
+            image_info(slot.diffuse_motion, vk::ImageLayout::eGeneral),
+            image_info(render_graph_.image(diffuse_normal_roughness_resource, index), vk::ImageLayout::eGeneral)
         };
-        std::array<vk::WriteDescriptorSet, 7> writes{};
+        std::array<vk::WriteDescriptorSet, 10> writes{};
         for (uint32_t binding = 0; binding < writes.size(); ++binding) {
             writes[binding].setDstSet(*slot.descriptor_set).setDstBinding(binding).setDescriptorCount(1)
                 .setDescriptorType(binding < 4 ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage)
@@ -245,18 +267,6 @@ auto DirectLightDenoisePass::init() -> void {
         impl_->slots.push_back(std::move(slot));
     }
 
-    nrd::IntegrationCreationDesc integration_desc{};
-    std::memcpy(integration_desc.name, "direct_light", sizeof("direct_light"));
-    integration_desc.resourceWidth = static_cast<uint16_t>(extent.width);
-    integration_desc.resourceHeight = static_cast<uint16_t>(extent.height);
-    integration_desc.queuedFrameNum = static_cast<uint8_t>(frame_count);
-    integration_desc.enableWholeLifetimeDescriptorCaching = false;
-    integration_desc.autoWaitForIdle = true;
-    const nrd::DenoiserDesc denoiser{relax_id, nrd::Denoiser::RELAX_DIFFUSE_SPECULAR};
-    nrd::InstanceCreationDesc instance_desc{};
-    instance_desc.denoisers = &denoiser;
-    instance_desc.denoisersNum = 1;
-
     const nri::QueueFamilyVKDesc queue_family{1, nri::QueueType::GRAPHICS, device_.graphics_family()};
     nri::DeviceCreationVKDesc device_desc{};
     device_desc.vkInstance = static_cast<VkInstance>(*impl_->context.instance());
@@ -265,8 +275,25 @@ auto DirectLightDenoisePass::init() -> void {
     device_desc.queueFamilies = &queue_family;
     device_desc.queueFamilyNum = 1;
     device_desc.minorVersion = 4;
-    if (impl_->integration.RecreateVK(integration_desc, instance_desc, device_desc) != nrd::Result::SUCCESS) {
-        throw std::runtime_error("NRD RELAX initialization failed");
+    const auto diffuse_extent = render_graph_.image(DirectLightPass::diffuse_resource).extent();
+    const std::array extents{diffuse_extent, extent};
+    constexpr std::array names{"direct_light_diffuse", "direct_light_specular"};
+    constexpr std::array denoisers{nrd::Denoiser::RELAX_DIFFUSE, nrd::Denoiser::RELAX_SPECULAR};
+    for (uint32_t index = 0; index < impl_->integrations.size(); ++index) {
+        nrd::IntegrationCreationDesc integration_desc{};
+        std::memcpy(integration_desc.name, names[index], std::strlen(names[index]) + 1);
+        integration_desc.resourceWidth = static_cast<uint16_t>(extents[index].width);
+        integration_desc.resourceHeight = static_cast<uint16_t>(extents[index].height);
+        integration_desc.queuedFrameNum = static_cast<uint8_t>(frame_count);
+        integration_desc.enableWholeLifetimeDescriptorCaching = false;
+        integration_desc.autoWaitForIdle = true;
+        const nrd::DenoiserDesc denoiser{relax_id, denoisers[index]};
+        nrd::InstanceCreationDesc instance_desc{};
+        instance_desc.denoisers = &denoiser;
+        instance_desc.denoisersNum = 1;
+        if (impl_->integrations[index].RecreateVK(integration_desc, instance_desc, device_desc) != nrd::Result::SUCCESS) {
+            throw std::runtime_error("NRD RELAX initialization failed");
+        }
     }
     impl_->initialized = true;
 }
@@ -297,9 +324,19 @@ auto DirectLightDenoisePass::prepare(const Scene& scene) -> void {
     common.frameIndex = impl_->frame_index;
     common.accumulationMode = impl_->frame_index == 0 ? nrd::AccumulationMode::CLEAR_AND_RESTART : nrd::AccumulationMode::CONTINUE;
 
-    impl_->integration.NewFrame();
-    if (impl_->integration.SetCommonSettings(common) != nrd::Result::SUCCESS ||
-        impl_->integration.SetDenoiserSettings(relax_id, &impl_->settings.relax) != nrd::Result::SUCCESS) {
+    nrd::CommonSettings diffuse_common = common;
+    const auto diffuse_extent = render_graph_.image(DirectLightPass::diffuse_resource).extent();
+    diffuse_common.resourceSize[0] = diffuse_common.resourceSizePrev[0] = diffuse_common.rectSize[0] =
+        diffuse_common.rectSizePrev[0] = static_cast<uint16_t>(diffuse_extent.width);
+    diffuse_common.resourceSize[1] = diffuse_common.resourceSizePrev[1] = diffuse_common.rectSize[1] =
+        diffuse_common.rectSizePrev[1] = static_cast<uint16_t>(diffuse_extent.height);
+
+    impl_->integrations[diffuse_index].NewFrame();
+    impl_->integrations[specular_index].NewFrame();
+    if (impl_->integrations[diffuse_index].SetCommonSettings(diffuse_common) != nrd::Result::SUCCESS ||
+        impl_->integrations[diffuse_index].SetDenoiserSettings(relax_id, &impl_->settings.diffuse_relax) != nrd::Result::SUCCESS ||
+        impl_->integrations[specular_index].SetCommonSettings(common) != nrd::Result::SUCCESS ||
+        impl_->integrations[specular_index].SetDenoiserSettings(relax_id, &impl_->settings.specular_relax) != nrd::Result::SUCCESS) {
         throw std::runtime_error("NRD RELAX frame settings failed");
     }
 
@@ -332,7 +369,8 @@ auto DirectLightDenoisePass::record() -> vk::CommandBuffer {
     const std::array start_barriers{
         guide_barrier(slot.view_z, before, vk::AccessFlagBits::eShaderWrite, old_layout),
         guide_barrier(slot.motion, before, vk::AccessFlagBits::eShaderWrite, old_layout),
-        guide_barrier(slot.normal_roughness, before, vk::AccessFlagBits::eShaderWrite, old_layout)
+        guide_barrier(slot.normal_roughness, before, vk::AccessFlagBits::eShaderWrite, old_layout),
+        guide_barrier(slot.diffuse_motion, before, vk::AccessFlagBits::eShaderWrite, old_layout)
     };
     command.pipelineBarrier(slot.guides_initialized ? vk::PipelineStageFlagBits::eComputeShader : vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, start_barriers);
@@ -347,26 +385,43 @@ auto DirectLightDenoisePass::record() -> vk::CommandBuffer {
     const std::array ready_barriers{
         guide_barrier(slot.view_z, vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral),
         guide_barrier(slot.motion, vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral),
-        guide_barrier(slot.normal_roughness, vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral)
+        guide_barrier(slot.normal_roughness, vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral),
+        guide_barrier(slot.diffuse_motion, vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral),
+        guide_barrier(render_graph_.image(diffuse_view_z_resource), vk::AccessFlagBits::eShaderWrite,
+                      vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral),
+        guide_barrier(render_graph_.image(diffuse_normal_roughness_resource), vk::AccessFlagBits::eShaderWrite,
+                      vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral)
     };
     command.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, ready_barriers);
 
-    nrd::ResourceSnapshot resources{};
-    resources.restoreInitialState = true;
-    resources.SetResource(nrd::ResourceType::IN_MV, nrd_resource(slot.motion, nri::AccessBits::SHADER_RESOURCE, nri::Layout::GENERAL));
-    resources.SetResource(nrd::ResourceType::IN_NORMAL_ROUGHNESS, nrd_resource(slot.normal_roughness, nri::AccessBits::SHADER_RESOURCE, nri::Layout::GENERAL));
-    resources.SetResource(nrd::ResourceType::IN_VIEWZ, nrd_resource(slot.view_z, nri::AccessBits::SHADER_RESOURCE, nri::Layout::GENERAL));
-    resources.SetResource(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST,
+    nrd::ResourceSnapshot diffuse_resources{};
+    diffuse_resources.restoreInitialState = true;
+    diffuse_resources.SetResource(nrd::ResourceType::IN_MV,
+        nrd_resource(slot.diffuse_motion, nri::AccessBits::SHADER_RESOURCE, nri::Layout::GENERAL));
+    diffuse_resources.SetResource(nrd::ResourceType::IN_NORMAL_ROUGHNESS,
+        nrd_resource(render_graph_.image(diffuse_normal_roughness_resource), nri::AccessBits::SHADER_RESOURCE, nri::Layout::GENERAL));
+    diffuse_resources.SetResource(nrd::ResourceType::IN_VIEWZ,
+        nrd_resource(render_graph_.image(diffuse_view_z_resource), nri::AccessBits::SHADER_RESOURCE, nri::Layout::GENERAL));
+    diffuse_resources.SetResource(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST,
         nrd_resource(render_graph_.image(DirectLightPass::diffuse_resource), nri::AccessBits::SHADER_RESOURCE, nri::Layout::SHADER_RESOURCE));
-    resources.SetResource(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST,
-        nrd_resource(render_graph_.image(DirectLightPass::specular_resource), nri::AccessBits::SHADER_RESOURCE, nri::Layout::SHADER_RESOURCE));
-    resources.SetResource(nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST,
+    diffuse_resources.SetResource(nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST,
         nrd_resource(render_graph_.image(diffuse_resource), nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::Layout::SHADER_RESOURCE_STORAGE));
-    resources.SetResource(nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST,
+
+    nrd::ResourceSnapshot specular_resources{};
+    specular_resources.restoreInitialState = true;
+    specular_resources.SetResource(nrd::ResourceType::IN_MV, nrd_resource(slot.motion, nri::AccessBits::SHADER_RESOURCE, nri::Layout::GENERAL));
+    specular_resources.SetResource(nrd::ResourceType::IN_NORMAL_ROUGHNESS,
+        nrd_resource(slot.normal_roughness, nri::AccessBits::SHADER_RESOURCE, nri::Layout::GENERAL));
+    specular_resources.SetResource(nrd::ResourceType::IN_VIEWZ,
+        nrd_resource(slot.view_z, nri::AccessBits::SHADER_RESOURCE, nri::Layout::GENERAL));
+    specular_resources.SetResource(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST,
+        nrd_resource(render_graph_.image(DirectLightPass::specular_resource), nri::AccessBits::SHADER_RESOURCE, nri::Layout::SHADER_RESOURCE));
+    specular_resources.SetResource(nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST,
         nrd_resource(render_graph_.image(specular_resource), nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::Layout::SHADER_RESOURCE_STORAGE));
 
     const nri::CommandBufferVKDesc command_desc{static_cast<VkCommandBuffer>(*command), nri::QueueType::GRAPHICS};
-    impl_->integration.DenoiseVK(&relax_id, 1, command_desc, resources);
+    impl_->integrations[diffuse_index].DenoiseVK(&relax_id, 1, command_desc, diffuse_resources);
+    impl_->integrations[specular_index].DenoiseVK(&relax_id, 1, command_desc, specular_resources);
     command.end();
     slot.guides_initialized = true;
     return *command;

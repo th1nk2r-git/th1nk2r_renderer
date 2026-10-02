@@ -35,7 +35,8 @@ namespace {
             vk::DescriptorSetLayoutBinding{4, vk::DescriptorType::eSampledImage, 1, stage},
             vk::DescriptorSetLayoutBinding{5, vk::DescriptorType::eAccelerationStructureKHR, 1, stage},
             vk::DescriptorSetLayoutBinding{6, vk::DescriptorType::eStorageBuffer, 1, stage},
-            vk::DescriptorSetLayoutBinding{7, vk::DescriptorType::eSampledImage, 1, stage}
+            vk::DescriptorSetLayoutBinding{7, vk::DescriptorType::eSampledImage, 1, stage},
+            vk::DescriptorSetLayoutBinding{8, vk::DescriptorType::eStorageImage, 1, stage}
         };
         vk::DescriptorSetLayoutCreateInfo create_info{};
         create_info.setBindings(bindings);
@@ -73,10 +74,7 @@ namespace {
         desc.vertex_shader = &vertex_shader;
         desc.fragment_shader = &fragment_shader;
         desc.layout = &layout;
-        desc.color_attachment_formats = {
-            render_graph.image(DirectLightPass::diffuse_resource).format(),
-            render_graph.image(DirectLightPass::specular_resource).format()
-        };
+        desc.color_attachment_formats = {render_graph.image(DirectLightPass::specular_resource).format()};
         desc.cull_mode = vk::CullModeFlagBits::eNone;
         desc.depth_test_enable = false;
         desc.depth_write_enable = false;
@@ -92,7 +90,8 @@ namespace {
             vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, frame_count},
             vk::DescriptorPoolSize{vk::DescriptorType::eStorageBuffer, frame_count * 2},
             vk::DescriptorPoolSize{vk::DescriptorType::eSampledImage, frame_count * gbuffer_texture_count},
-            vk::DescriptorPoolSize{vk::DescriptorType::eAccelerationStructureKHR, frame_count}
+            vk::DescriptorPoolSize{vk::DescriptorType::eAccelerationStructureKHR, frame_count},
+            vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, frame_count}
         };
         vk::DescriptorPoolCreateInfo create_info{};
         create_info
@@ -190,10 +189,11 @@ auto DirectLightPass::declare_resources(const Device& device, RenderGraph& rende
     }
 
     constexpr auto format = vk::Format::eR16G16B16A16Sfloat;
-    constexpr auto required_features = vk::FormatFeatureFlagBits::eColorAttachment | vk::FormatFeatureFlagBits::eSampledImage;
+    constexpr auto required_features = vk::FormatFeatureFlagBits::eColorAttachment |
+        vk::FormatFeatureFlagBits::eSampledImage | vk::FormatFeatureFlagBits::eStorageImage;
     const auto features = device.physical_device().getFormatProperties(format).optimalTilingFeatures;
     if ((features & required_features) != required_features) {
-        throw std::runtime_error("RGBA16F direct-light attachments are unsupported");
+        throw std::runtime_error("RGBA16F direct-light output formats are unsupported");
     }
 
     const ImageDesc desc{
@@ -201,7 +201,10 @@ auto DirectLightPass::declare_resources(const Device& device, RenderGraph& rende
         .extent = vk::Extent3D{extent.width, extent.height, 1},
         .samples = vk::SampleCountFlagBits::e1
     };
-    render_graph.create_image(std::string{diffuse_resource}, desc, ResourceMultiplicity::PerFrame, {0, 0, 0, 0});
+    ImageDesc diffuse = desc;
+    diffuse.extent.width = extent.width / 2 + extent.width % 2;
+    diffuse.extent.height = extent.height / 2 + extent.height % 2;
+    render_graph.create_image(std::string{diffuse_resource}, diffuse, ResourceMultiplicity::PerFrame);
     render_graph.create_image(std::string{specular_resource}, desc, ResourceMultiplicity::PerFrame, {0, 0, 0, 0});
 }
 
@@ -240,7 +243,7 @@ auto DirectLightPass::init() -> void {
         vk::WriteDescriptorSetAccelerationStructureKHR tlas_info{};
         tlas_info.setAccelerationStructures(tlas_handle);
 
-        std::array<vk::WriteDescriptorSet, 8> writes{};
+        std::array<vk::WriteDescriptorSet, 9> writes{};
         writes[0]
             .setDstSet(*impl_->descriptor_sets[index])
             .setDstBinding(0)
@@ -270,6 +273,10 @@ auto DirectLightPass::init() -> void {
             .setDstBinding(6)
             .setDescriptorType(vk::DescriptorType::eStorageBuffer)
             .setBufferInfo(buffer_infos[2]);
+        const vk::DescriptorImageInfo diffuse_info{.imageView = *render_graph_.image(diffuse_resource, index).view(),
+                                                   .imageLayout = vk::ImageLayout::eGeneral};
+        writes[8].setDstSet(*impl_->descriptor_sets[index]).setDstBinding(8)
+            .setDescriptorType(vk::DescriptorType::eStorageImage).setImageInfo(diffuse_info);
         device_.logical_device().updateDescriptorSets(writes, {});
     }
 
@@ -278,14 +285,13 @@ auto DirectLightPass::init() -> void {
 }
 
 auto DirectLightPass::configure(RenderGraph& render_graph) -> void {
-    render_graph.add_dependency(name(), TlasBuildPass::pass_name);
     render_graph.add_dependency(name(), RestirDiPass::pass_name);
     render_graph.set_buffer_usage(name(), RestirDiPass::final_resource, BufferUsage::FragmentStorageRead);
     render_graph.set_image_usage(name(), GeometryPass::base_color_ao_resource, ImageUsage::FragmentSampled);
     render_graph.set_image_usage(name(), GeometryPass::normal_roughness_resource, ImageUsage::FragmentSampled);
     render_graph.set_image_usage(name(), GeometryPass::depth_resource, ImageUsage::FragmentSampled);
     render_graph.set_image_usage(name(), GeometryPass::emissive_metallic_resource, ImageUsage::FragmentSampled);
-    render_graph.set_image_usage(name(), diffuse_resource, ImageUsage::ColorAttachment);
+    render_graph.set_image_usage(name(), diffuse_resource, ImageUsage::FragmentStorageWrite);
     render_graph.set_image_usage(name(), specular_resource, ImageUsage::ColorAttachment);
 }
 
@@ -321,10 +327,7 @@ auto DirectLightPass::record() -> vk::CommandBuffer {
     auto& slot = impl_->command_slots.at(frame_index);
     slot.pool.reset();
 
-    const std::array color_formats{
-        render_graph_.image(diffuse_resource).format(),
-        render_graph_.image(specular_resource).format()
-    };
+    const std::array color_formats{render_graph_.image(specular_resource).format()};
     vk::CommandBufferInheritanceRenderingInfo rendering_inheritance{};
     rendering_inheritance
         .setColorAttachmentFormats(color_formats)
@@ -346,7 +349,7 @@ auto DirectLightPass::record() -> vk::CommandBuffer {
 #endif
     command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *impl_->pipeline);
 
-    const auto extent_3d = render_graph_.image(diffuse_resource).extent();
+    const auto extent_3d = render_graph_.image(specular_resource).extent();
     const vk::Extent2D extent{extent_3d.width, extent_3d.height};
     command_buffer.setViewport(
         0,

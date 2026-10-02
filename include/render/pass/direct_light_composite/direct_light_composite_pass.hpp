@@ -15,7 +15,12 @@ public:
     inline static constexpr std::string_view pass_name = "direct_light_composite";
     inline static constexpr std::string_view output_resource = "backbuffer";
 
-    DirectLightCompositePass(const Device& device, RenderGraph& render_graph, const RestirDiPass& restir_di_pass);
+    struct Settings {
+        float minimum_normal_dot = 0.9F;
+    };
+
+    DirectLightCompositePass(const Device& device, RenderGraph& render_graph, const RestirDiPass& restir_di_pass,
+                             Settings settings = {});
     ~DirectLightCompositePass() override;
 
     DirectLightCompositePass(const DirectLightCompositePass&) = delete;

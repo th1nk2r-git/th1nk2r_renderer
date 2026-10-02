@@ -9,8 +9,7 @@ struct Input
 struct Output
 {
     // Linear, material-demodulated radiance and first-bounce hit distance for RELAX.
-    [[vk::location(0)]] float4 diffuse;
-    [[vk::location(1)]] float4 specular;
+    [[vk::location(0)]] float4 specular;
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<Frame> frame;
@@ -21,6 +20,7 @@ struct Output
 [[vk::binding(5, 0)]] RaytracingAccelerationStructure scene_tlas;
 [[vk::binding(6, 0)]] StructuredBuffer<Reservoir> final_reservoirs;
 [[vk::binding(7, 0)]] Texture2D<float4> emissive_metallic_texture;
+[[vk::binding(8, 0)]] [vk::image_format("rgba16f")] RWTexture2D<float4> diffuse_texture;
 
 float3 world_direction(float3 local, float3 normal, float3 tangent, float3 bitangent)
 {
@@ -155,13 +155,15 @@ float4 pack_signal(float3 irradiance, float3 factor, float hit_distance)
 Output main(Input input)
 {
     Output output;
-    output.diffuse = float4(0.0);
     output.specular = float4(0.0);
     uint2 pixel = uint2(input.position.xy);
+    bool write_diffuse = ((pixel.x | pixel.y) & 1u) == 0u;
+    float4 diffuse_signal = float4(0.0);
     uint2 viewport = frame.light_count_viewport.yz;
     float depth = depth_texture.Load(int3(pixel, 0));
     if (depth >= 1.0)
     {
+        if (write_diffuse) diffuse_texture[pixel >> 1] = diffuse_signal;
         return output;
     }
 
@@ -175,6 +177,7 @@ Output main(Input input)
     float3 view_direction = normalize(frame.camera_position.xyz - surface.position);
     if (dot(surface.normal, view_direction) <= 0.0)
     {
+        if (write_diffuse) diffuse_texture[pixel >> 1] = diffuse_signal;
         return output;
     }
 
@@ -185,6 +188,7 @@ Output main(Input input)
 
     if (frame.light_count_viewport.x == 0u)
     {
+        if (write_diffuse) diffuse_texture[pixel >> 1] = diffuse_signal;
         return output;
     }
 
@@ -197,7 +201,11 @@ Output main(Input input)
     if (!valid)
     {
         // A missing ReSTIR sample still needs first-bounce distances on both lobes.
-        output.diffuse.a = fallback_hit_distance(surface, view_direction, tangent, bitangent, 65504.0, false, state);
+        if (write_diffuse)
+        {
+            diffuse_signal.a = fallback_hit_distance(surface, view_direction, tangent, bitangent, 65504.0, false, state);
+            diffuse_texture[pixel >> 1] = diffuse_signal;
+        }
         output.specular.a = fallback_hit_distance(surface, view_direction, tangent, bitangent, 65504.0, true, state);
         return output;
     }
@@ -239,12 +247,16 @@ Output main(Input input)
     bool accept_specular = random_float(state) < specular_probability;
     // A miss in the auxiliary lobe ray uses the finite FP16 distance limit.
     float fallback_limit = 65504.0;
-    float diffuse_hit = accept_diffuse ? selected_hit : fallback_hit_distance(
-        surface, view_direction, tangent, bitangent, fallback_limit, false, state);
     float specular_hit = accept_specular ? selected_hit : fallback_hit_distance(
         surface, view_direction, tangent, bitangent, fallback_limit, true, state);
 
-    output.diffuse = pack_signal(diffuse * reservoir.weight, diffuse_factor, diffuse_hit);
+    if (write_diffuse)
+    {
+        float diffuse_hit = accept_diffuse ? selected_hit : fallback_hit_distance(
+            surface, view_direction, tangent, bitangent, fallback_limit, false, state);
+        diffuse_signal = pack_signal(diffuse * reservoir.weight, diffuse_factor, diffuse_hit);
+        diffuse_texture[pixel >> 1] = diffuse_signal;
+    }
     output.specular = pack_signal(specular * reservoir.weight, specular_factor, specular_hit);
     return output;
 }
