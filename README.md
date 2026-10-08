@@ -1,390 +1,192 @@
 # th1nk2r_renderer
 
-基于 **C++20** 与 **Vulkan 1.4** 构建的模块化实时渲染器。项目采用 Vulkan-Hpp RAII 管理 Vulkan 对象，使用 VMA 分配 GPU 内存，通过 Assimp、stb_image 与 Slang 建立模型导入、纹理处理和着色器编译链路。
+基于 **C++20、Vulkan 1.4 和 Slang** 的 Windows 实时渲染器。当前渲染路径使用延迟几何缓冲、GPU 视锥剔除、Vulkan 光线查询、ReSTIR DI 直接光照采样，以及 NVIDIA NRD RELAX 降噪。渲染任务由 RenderGraph 声明资源用途与节点依赖；各节点的次级命令缓冲并行录制，再按图顺序在主命令缓冲中执行。
 
-渲染器将平台窗口、设备上下文、帧调度、资源系统、场景表达与渲染 Pass 分层组织，以清晰的所有权边界管理 GPU 资源。当前渲染路径支持 Metallic-Roughness PBR、基于计算着色器的 IBL 预计算、点光源 PCSS 全向软阴影、Mesh 级视锥剔除与天空盒渲染；帧内由八工作线程池调度阴影与前向两项主命令缓冲录制任务，默认示例为随机生成的 128×128 方块地形。
+## 画面效果
 
-## 效果展示
+**Sponza 场景：** 石材结构、织物材质及直接光照效果。
 
-![Sponza 场景实时渲染效果](docs/images/sponza-render-preview.png)
+![Sponza 建筑场景渲染截图](docs/images/photo_1.png)
 
-## 核心能力
+**程序生成的方块地形：** 128 × 128 高度图形成的地表与阶梯轮廓。
 
-### 渲染
+![方块地形渲染截图](docs/images/photo_2.png)
 
-- **Metallic-Roughness PBR**：基于 Cook-Torrance BRDF，使用 GGX 法线分布、Smith 几何遮蔽与 Schlick Fresnel。
-- **材质系统**：支持基础色、金属度-粗糙度、法线、环境遮蔽、自发光以及 Alpha Mask。
-- **图像化照明（IBL）**：运行时通过计算着色器完成 HDR 等距柱状图到 Cubemap 的转换，并生成漫反射 Irradiance Map、Specular Prefilter Map 与 BRDF LUT。
-- **全向软阴影**：点光源使用 Cubemap Array 保存六面深度，片元阶段通过 PCSS 完成遮挡物搜索与可变半影过滤。
-- **天空盒与 HDR 色调映射**：直接显示环境 Cubemap，并对最终 HDR 光照结果执行 Reinhard Tone Mapping。
-- **多点光源**：场景点光源经 Storage Buffer 上传；每盏灯可独立配置强度、颜色、阴影范围和光源半径。
-- **Mesh 级视锥剔除**：前向 Pass 从相机 View-Projection 矩阵提取 Vulkan ZO 裁剪空间的六个视锥平面，以世界空间 AABB 逐 Mesh 判定可见性，并仅为可见 Mesh 记录材质绑定和索引绘制命令；几何缓冲区在每项录制任务中统一绑定。
+截图位于 [`docs/images/`](docs/images/)。当前示例程序在同一场景中创建 Sponza 与地形；截图展示了其中不同区域。
 
-### 资源与场景
-
-- 递归发现并导入 OBJ、FBX、glTF 与 GLB 模型。
-- 支持外部或内嵌 JPEG/PNG 纹理，以及 HDR 环境图。
-- 使用暂存 Buffer 批量上传顶点、索引和图像数据，并为 2D 纹理自动生成完整 Mipmap 链。
-- `AssetsDB` 统一持有所有 Mesh 的大顶点、索引 Buffer；`Mesh` 是记录元素偏移、数量和模型空间 AABB 的范围结构体，索引保持局部编号。
-- CPU 导入数据、GPU 资源对象与 `AssetsDB` 分层管理，通过类型安全 `ResourceId` 引用资源。
-- `ModelImporter` 负责模型目录扫描与资源注册，并在同一导入器实例内缓存纹理及其 sRGB/UNORM 变体；导入时将 CPU MeshData 与材质数据移入资产库，应用在全部导入后调用 `AssetsDB::upload()` 创建共享几何 Buffer 和全局材质 Storage Buffer。
-- `Scene` 持有相机、实体和点光源；`Entity` 按类型管理 `Component`，通过 `Transform` 表达变换，通过 `MeshRenderer` 引用模型。阴影和前向 Pass 只绘制同时具有这两个组件的实体。
-- `Model` 保存 `Primitive` 列表，每个 Primitive 分别引用网格与材质 ID，资源对象由注册表持有；自由飞行相机由输入系统驱动。
-- `TerrainGenerator` 保存固定 128×128 高度图，通过带 seed 的四层平滑 Value Noise 生成整数柱高，只为有外露面的方块创建实体，并共享传入的模型资源。
-
-### 运行时与资源管理
-
-- 使用 Vulkan-Hpp RAII 管理实例、设备、Swapchain、Pipeline、Descriptor 与同步对象的生命周期。
-- 使用 Vulkan Memory Allocator（VMA）统一分配 Buffer 和 Image 显存。
-- 双帧并行，使用 Fence 和 Semaphore 管理 CPU/GPU 与呈现同步。
-- 使用包含八个常驻工作线程的任务队列调度命令录制；每帧投递 `ShadowPass` 与 `ForwardPass` 两项任务，主线程在提交前通过 `std::future` 等待两项录制任务完成并传播任务异常。
-- 每个在途帧提供两个独立的命令录制槽位。每个槽位分别持有一个可重置 Command Pool 和一个以 `eOneTimeSubmit` 标志录制的 Primary Command Buffer，阴影与前向录制不共享 Command Pool。
-- 阴影和前向 Command Buffer 按固定顺序组成同一个 Graphics Queue 提交：阴影命令在前，前向渲染命令在后。
-- 优先选择 Mailbox Present Mode，不可用时回退到 FIFO。
-- 处理窗口缩放、最小化、`VK_ERROR_OUT_OF_DATE_KHR` 与 Swapchain/图形管线重建。
-- Debug 构建自动尝试启用 `VK_LAYER_KHRONOS_validation` 和 Debug Messenger。
-
-## 设计原则
-
-- **显式资源所有权**：Vulkan RAII 与不可复制资源类型确保对象按依赖顺序释放。
-- **数据与运行时分离**：`io` 层解析文件并返回 CPU 数据；`ModelImporter` 注册模型资源，注册表负责资源所有权、几何缓冲区构建与寻址。CPU 模型使用局部纹理、材质索引，运行时模型使用类型安全资源 ID。
-- **统一渲染入口**：`Renderer` 持有 `ShadowPass`、`ForwardPass`，引用由 `Application` 持有的线程池，负责材质绑定初始化、环境图设置、帧调度、交换链恢复与呈现；各 Pass 保留具体绘制实现。
-- **主循环与图形 API 隔离**：`Renderer` 的渲染接口接收场景、资源 ID 和 CPU 图像数据，通过私有实现隐藏帧调度所需的 Vulkan 对象。`Application::loop()` 只处理事件、计时、场景更新和通用帧结果；应用仍持有 `DeviceContext`，用于构造 Renderer 和导入资源。
-- **独立帧间计时**：`Application` 长期持有 `Timer`，通过 `std::chrono::steady_clock` 计算以秒为单位的帧间隔，默认限制最大时间步长为 `0.05F`。进入主循环和跳帧后重置计时基准。
-- **并行录制资源隔离**：命令录制槽位按在途帧组织，每个槽位独占 Command Pool 与 Primary Command Buffer；相机、灯光和阴影资源同样按帧索引访问。
-- **显式执行顺序**：CPU 侧并行生成两组命令，GPU 侧在单次 Queue Submit 中依次执行阴影与前向 Command Buffer。
-- **统一资产部署**：构建过程统一编译 Slang 着色器并部署运行时资源。
-
-## 技术栈
-
-| 组件 | 用途 |
-| --- | --- |
-| C++20 / MSVC | 核心语言与 Windows x64 工具链 |
-| Vulkan 1.4 / Vulkan-Hpp | 图形 API 与类型安全 RAII 封装 |
-| Slang | Vertex、Fragment、Compute Shader 与 SPIR-V 编译 |
-| GLFW | 窗口、输入和 Vulkan Surface |
-| GLM | 向量、矩阵与四元数运算 |
-| Vulkan Memory Allocator | GPU 内存分配 |
-| Assimp 6.0.4 | 模型、网格和材质导入 |
-| stb_image | JPEG、PNG 与 HDR 图像解码 |
-| Xmake | 依赖解析、构建和运行时资源部署 |
-
-## 架构
-
-项目按平台、设备、资源、场景和渲染职责拆分模块。`DeviceContext` 聚合 Vulkan 设备级基础设施，`Renderer` 在私有实现中持有交换链、在途帧、阴影 Pass 和前向 Pass，统一组织帧内录制与呈现。`Application` 长期持有通用线程池 `ThreadPool<8>`；Renderer 构造时绑定设备上下文、窗口、只读资源注册表和线程池引用，这些对象的生命周期均长于 Renderer；各 Pass 使用该注册表解析场景组件中的模型 ID，以及模型 Primitive 中的网格、材质 ID，并独立维护其管线、描述符和命令记录逻辑。应用通过 `Renderer::prepare_resources()` 完成上传和材质绑定初始化，通过 `set_environment()` 设置环境图，并通过 `render(scene)` 请求渲染。
+## 系统架构
 
 ```mermaid
 flowchart LR
-    Assets["模型 / 纹理"] --> IO["io: Assimp + stb_image"]
-    IO --> CPU["ModelData / TextureData / MaterialData / MeshData"]
-    CPU --> Importer["ModelImporter"]
-    Importer --> GPU["GPU Resources / Model Primitives"]
-    GPU --> Registry["AssetsDB"]
-    Importer -->|纹理| Upload["Buffer / Image Uploader"]
-    Registry -->|几何| Upload
-    HDR["HDR 环境图"] --> ImageIO["io: stb_image"]
-    ImageIO --> Panorama["HdrImageData"]
-
-    Window["GLFW Window"] --> Input["InputSystem"]
-    Input --> Camera["CameraController"]
-    Camera --> Scene["Scene / Camera / Lights / Entity Components"]
-    Registry --> Renderer["Renderer"]
-    Scene --> Renderer
-    Panorama --> Renderer
-    Renderer --> Upload
-    Renderer --> Prepare["ShadowPass::prepare"]
-    App["Application"] -->|持有| Pool["ThreadPool&lt;8&gt;"]
-    App -->|持有| Renderer
-    Renderer -->|引用 / 投递任务| Pool
-    Renderer --> Shadow["ShadowPass"]
-    Renderer --> Forward["ForwardPass"]
-    Prepare --> Shadow
-    Prepare --> Forward
-    Pool --> Shadow
-    Pool --> Forward
-    Shadow --> ShadowCB["Shadow Primary Command Buffer"]
-    Forward --> ForwardCB["Forward Primary Command Buffer"]
-    ShadowCB --> Submit["Ordered Graphics Queue Submit"]
-    ForwardCB --> Submit
-    Submit --> Swapchain["Swapchain / Present"]
-
-    Device["DeviceContext"] --> Upload
-    Device --> Importer
-    Device --> Shadow
-    Device --> Forward
-    Device --> Renderer
+    A[Application<br/>主循环、计时、输入] --> S[Scene<br/>Camera、Entity、PointLight]
+    A --> I[ModelImporter<br/>Assimp / stb_image]
+    I --> D[AssetsDB<br/>纹理、材质、共享几何、BLAS]
+    A --> C[DeviceContext<br/>Vulkan 设备、VMA、上传器]
+    A --> R[Renderer<br/>Swapchain、双帧调度]
+    S --> R
+    D --> R
+    C --> R
+    R --> G[RenderGraph<br/>资源注册、拓扑排序、屏障]
+    G --> P[7 个 RenderPass<br/>并行录制次级命令缓冲]
+    P --> B[主命令缓冲<br/>顺序执行与呈现]
 ```
 
-核心模块职责：
-
-| 模块 | 职责 |
+| 层次 | 当前职责 |
 | --- | --- |
-| `core` | 应用生命周期、资源装载、主循环、Timer 帧间计时、输入调度与通用线程池实现 |
-| `platform` | GLFW 窗口及事件回调封装 |
-| `gfx/device` | Vulkan 实例与设备、VMA、Buffer/Image 上传器 |
-| `gfx/frame` | Swapchain、深度附件、Framebuffer、帧同步与按帧隔离的命令录制槽位 |
-| `gfx/pipeline` | 图形管线创建与固定功能状态配置 |
-| `gfx/resource` | VMA Buffer/Image 封装与资源描述 |
-| `io` | SPIR-V 读取校验、Assimp 模型解析与图像解码，返回 CPU 数据 |
-| `resource` | CPU/GPU 资产、模型导入器、材质、网格、模型与 `AssetsDB` |
-| `scene` | 相机、点光源、实体与组件管理；Transform 变换、MeshRenderer 模型引用与方块地形生成 |
-| `render` | 统一渲染入口、Render Graph 资源持有与调度、Pass 所有权、交换链恢复及呈现 |
-| `render/pass/shadow` | 点光源 Cubemap Array 深度生成与阴影描述符输出 |
-| `render/pass/forward` | Mesh 级视锥剔除、PBR 前向着色、IBL 预计算、材质/相机/灯光描述符与天空盒 |
+| `platform`、`core` | GLFW 窗口与回调；输入路由、自由飞行相机、帧间计时和 8 工作线程的任务池。 |
+| `gfx` | Vulkan 实例、设备与队列、交换链、双帧同步、VMA Buffer/Image、上传器及图形/计算管线。Vulkan 对象使用 Vulkan-Hpp RAII 封装。 |
+| `io`、`resource` | Assimp 模型解析、stb_image 图像解码、SPIR-V 读取；CPU 导入数据、类型化 `ResourceId<T>`、资产池、共享顶点/索引/材质缓冲和网格 BLAS。 |
+| `scene` | 相机、点光源、实体及 `Transform`/`MeshRenderer` 组件；基于高度图的方块地形生成。 |
+| `render` | `Renderer` 管理帧获取、记录、提交和呈现；`RenderGraph` 管理具名图像/缓冲、节点依赖、资源状态转换和动态渲染附件。 |
+| `shaders` | Slang 顶点、片元、计算着色器与共享光照逻辑；构建时编译为 SPIR-V。 |
 
-### 启动阶段
+### 帧内数据流
 
-1. `Application` 创建场景、GLFW 窗口、设备上下文、`AssetsDB`、输入系统、Timer 和八工作线程池；设备上下文创建 Vulkan 实例、Surface、物理/逻辑设备、VMA 和上传器。
-2. `Renderer` 引用应用的线程池，并创建 Swapchain、帧同步与命令录制资源、阴影 Pass 和前向 Pass。
-3. `Application` 调用 `ModelImporter` 递归扫描 `assets/models/`，导入并注册模型、材质与纹理。
-4. `AssetsDB::upload()` 按总数据量创建大 VB/IB 和全局材质 Storage Buffer，排队上传后释放暂存的 CPU Mesh 与材质数据；随后提交 Buffer/Image 上传并初始化渲染 Pass。
-5. 加载 HDR 环境图，通过 `Renderer::set_environment()` 使用 Compute Shader 生成 IBL 所需的 Cubemap 与查找表。
-6. 使用 `rocky_soil_smooth` 模型生成 128×128 方块地形，设置俯视相机和点光源；默认关闭该点光源的阴影，进入主循环前重置 Timer。
+| 顺序 | RenderGraph 节点 | 输入与输出 |
+| --- | --- | --- |
+| 1 | `tlas_build` | 根据场景模型实例与已构建的网格 BLAS 建立当前在途帧的 TLAS，供光线查询使用。 |
+| 2 | `culling` | 将实体的模型变换、网格 AABB 和材质索引写入逐帧实例缓冲；计算着色器完成六平面视锥测试，生成间接索引绘制命令与可见计数。 |
+| 3 | `geometry` | `drawIndexedIndirectCount` 绘制可见网格，写入基础色/遮蔽、世界空间法线/粗糙度、自发光/金属度、运动向量及深度 G-buffer。 |
+| 4 | `restir_di` | 从 G-buffer 重建表面，采样点光源球面位置并使用 `RayQuery` 测试可见性；生成当前与最终逐像素 reservoir。默认开启空间复用，关闭时域复用。 |
+| 5 | `direct_light` | 使用最终 reservoir、材质与 TLAS 计算直接光照；漫反射辐射/命中距离写入半分辨率图像，镜面分量写入全分辨率图像。 |
+| 6 | `direct_light_denoise` | 将深度、法线、粗糙度及运动向量转换为 NRD 输入，分别以 `RELAX_DIFFUSE` 和 `RELAX_SPECULAR` 处理漫反射与镜面信号。 |
+| 7 | `direct_light_composite` | 基于深度和法线为半分辨率漫反射选择邻近样本，恢复材质因子并叠加全分辨率镜面分量，写入交换链图像。 |
 
-### 单帧流程
+| 关键中间资源 | 格式与粒度 |
+| --- | --- |
+| 基础色/遮蔽 G-buffer | `R8G8B8A8_SRGB`，全分辨率、逐帧 |
+| 法线/粗糙度、自发光/金属度、运动向量 G-buffer | `R16G16B16A16_SFLOAT`，全分辨率、逐帧 |
+| 几何深度 | `D32_SFLOAT`，全分辨率、逐帧 |
+| ReSTIR reservoir | 每像素 32 字节；当前与最终两个共享 Buffer |
+| 直接光照与 RELAX 输出 | `R16G16B16A16_SFLOAT`；漫反射半分辨率，镜面全分辨率 |
 
-```text
-处理窗口事件
-  -> Timer 采样帧间隔，更新应用状态
-  -> 调用 Renderer::render(scene)
-  -> Renderer 检查窗口状态
-      -> 窗口已关闭：返回 Skipped
-      -> 窗口尺寸变化：恢复交换链与前向管线，返回 Skipped
-      -> 正常：继续本帧
-  -> 等待当前帧 Fence
-  -> 获取 Swapchain Image
-      -> OutOfDate：恢复交换链与前向管线，返回 Skipped
-      -> Success / Suboptimal：继续本帧
-  -> 准备当前帧的阴影面数据与灯光绑定
-  -> 将 ShadowPass 与 ForwardPass 两项录制任务分派至八工作线程池
-      -> 槽位 0：录制阴影 Primary Command Buffer，为投影点光源生成六面深度
-      -> 槽位 1：更新 Camera / Light Buffer，完成视锥剔除，并录制包含 PBR 绘制与天空盒的前向 Primary Command Buffer
-  -> 等待两项录制任务完成并取得执行结果
-  -> 按 Shadow、Forward 顺序通过一次 Graphics Queue Submit 提交两个 Command Buffer
-  -> Present
-  -> 推进在途帧索引
-  -> Acquire 为 Suboptimal，或 Present 为 OutOfDate / Suboptimal：恢复交换链与前向管线，返回 Skipped
-  -> 否则返回 Rendered
-```
+`RenderGraph::compile()` 对依赖做拓扑排序，汇总资源用途并生成图像布局转换与 Buffer 屏障。每帧在等待对应 Fence 并获取交换链图像后，所有 Pass 先执行 `prepare()`；随后 7 个 `record()` 任务进入线程池。主线程等待任务结果，将次级命令缓冲按图顺序连同屏障录入一个 Primary Command Buffer，执行一次 Graphics Queue 提交，再呈现图像。图形节点采用 Vulkan 动态渲染。窗口尺寸变化、最小化以及 `OUT_OF_DATE`/`SUBOPTIMAL` 会触发交换链、图资源和 Pass 的重建。
 
-恢复交换链时，Renderer 在帧缓冲尺寸为零的情况下等待窗口事件，直到窗口恢复或关闭；窗口未关闭时等待 GPU 空闲，重建交换链及前向、天空盒管线。`Skipped` 会结束本次 `render()` 调用，应用随即重置 Timer；呈现后的恢复分支可能已经提交过本帧命令。其他异常继续向上传播。主循环退出时调用 `Renderer::wait_idle()`。
+### 资源与场景
 
-## 项目结构
+`ModelImporter` 递归扫描 `assets/models/` 中的 `.obj`、`.fbx`、`.gltf` 和 `.glb` 文件。模型默认以其所在目录名注册；同名目录中的模型会发生名称冲突。Assimp 将网格三角化并准备法线、切线与 UV；材质记录基础色、Metallic-Roughness、法线、遮蔽、Alpha Mask 和自发光数据。外部或嵌入式材质图像解码为 RGBA8；基础色/自发光使用 sRGB 纹理，其他数据图使用 UNORM 纹理，同一来源的编码变体分别缓存。
 
-```text
-th1nk2r_renderer/
-├─ assets/                         # 示例场景、纹理、HDR 与资产授权说明
-├─ docs/images/                    # 渲染效果截图
-├─ include/
-│  ├─ core/                        # Application、Timer、输入系统与通用线程池
-│  ├─ gfx/                         # Vulkan 设备、资源、帧和管线
-│  ├─ io/                          # 模型解析、图像解码与 SPIR-V 读取
-│  ├─ platform/                    # 窗口抽象
-│  ├─ render/                      # Renderer 与 Forward / Shadow Pass
-│  ├─ resource/                    # CPU/GPU 资源、Importer 和 Registry
-│  └─ scene/                       # Camera、Light、Entity、Component 与组件
-├─ shaders/
-│  ├─ vertex/                      # 顶点着色器
-│  ├─ fragment/                    # 片元着色器
-│  └─ compute/                     # 计算着色器
-├─ src/                            # 与 include/ 对应的实现
-├─ bin/                            # 可执行文件、SPIR-V 与运行时资产（构建生成）
-├─ xmake/rules/                    # NRD 依赖与 Slang 编译规则
-├─ LICENSE
-└─ xmake.lua
-```
+`AssetsDB` 在导入阶段收集 CPU 网格与材质，导入完成后一次性建立共享顶点、索引和材质 Buffer。每个 `Model` 引用一组 `Primitive`，每个 `Primitive` 引用网格与材质 ID；`Mesh` 保存共享缓冲中的元素偏移、索引数量和模型空间 AABB。材质纹理通过描述符数组按资源 ID 索引。上传完成后，每个网格建立一个 BLAS；运行时 TLAS 由模型实例引用这些 BLAS。材质纹理通过暂存资源上传并生成 2D Mipmap 链。
 
-## 环境要求
+默认 `Application::setup_scene()` 使用随机 seed 和 `dense_green_grass_sharp` 预览方块模型生成 128 × 128 地形，采用四层 Value Noise 计算高度，默认高度为 1–10 个方块。生成器为顶面、侧边或底面外露的方块创建实体，方块之间共享同一模型资源。场景另有位置为 `(0, 10, 0)` 的 Sponza 实体与两盏点光源；相机初始位置为 `(0, 20, 0)`，垂直视场角 60°。模型目录中的其他预览 GLB 也在启动时导入，但不会自动成为场景实体。
 
-当前构建配置面向 **Windows x64 + MSVC**：
+### 当前渲染边界
 
-- Windows 10/11 x64。
-- Visual Studio 2022 或 Build Tools，安装“使用 C++ 的桌面开发”工作负载。
-- [Xmake](https://xmake.io/)。
-- 可通过 `PATH` 直接调用的 [`slangc`](https://github.com/shader-slang/slang)。
-- 支持 Vulkan 1.4 的显卡、驱动和 Vulkan Runtime。
-- GPU 需要有同时支持 Graphics 和 Compute 的队列族，并支持窗口呈现、`VK_KHR_swapchain`、`imageCubeArray` 和 `shaderDrawParameters`；呈现队列可以属于另一队列族。
-- 材质纹理需要 RGBA8 sRGB/UNORM 的采样支持，生成 Mipmap 时还需要线性 Blit 支持；IBL 使用 RGBA32F，需要采样、线性过滤、Storage Image 和 Blit 支持；阴影深度格式需要同时支持深度附件与采样。这些能力在资源初始化阶段单独检查。
-- 推荐安装 Vulkan SDK，以便在 Debug 构建中使用 Khronos Validation Layer 和调试工具。
+- ReSTIR DI 默认每像素产生 1 个初始候选，并在 30 像素半径内检查 5 个空间邻居；时域复用的代码与参数存在，但默认设置为关闭。NRD 仍使用当前帧和历史帧的相机及运动信息进行降噪。
+- TLAS 在每个在途帧首次建立后保持静态；后续实体增删或变换不会更新该帧 TLAS。几何绘制的实例数据则按帧重新准备。
+- G-buffer 保留自发光 RGB，但当前最终合成着色器只读取同一纹理的金属度 Alpha 通道，输出为降噪后的直接光照漫反射与镜面分量之和。仓库中的 HDR 环境图当前未进入启动或渲染路径。
+- 光线查询使用 opaque 三角形命中；几何 Pass 的 Alpha Mask 裁剪不参与 BLAS/TLAS 命中判定。
+- 每个剔除 Pass 和 TLAS Pass 的实例容量均为 65,536；实际可用数量还受 GPU 设备限制和场景模型的 Primitive 数量影响。
 
-可以先检查本地工具：
+## 核心技术实现
 
-```powershell
-xmake --version
-slangc -version
-```
+### 资产导入、统一缓冲与材质寻址
 
-GLFW、GLM、VMA、stb、Assimp、CMake 与 Vulkan SDK 已在 `xmake.lua` 中声明。首次构建还会从 NVIDIA 仓库获取固定版本的 NRD 源码，编译 NRD/NRI，并将 SDK 放在 `build/nrd-src/`；因此首次构建需要网络连接。`xmake run` 会自动构建，首次准备 NRD 时会显示下载、配置和编译进度，可能需要几分钟。删除 `build/` 和 `bin/` 后再次运行 `xmake` 会重新生成这些文件。已有 SDK 可通过同时设置 `NRD_SDK_ROOT` 和 `NRI_SDK_ROOT` 使用。
+`ModelImporter` 按路径排序后逐一导入模型。Assimp 将网格三角化、预变换顶点，并生成或提取法线、切线、UV 和顶点色；导入结果先保存在 CPU 侧 `MeshData` 与 `MaterialData` 中。材质的五类纹理分别解析为基础色、Metallic-Roughness、法线、遮蔽和自发光。缺失纹理使用 1 × 1 白色或平坦法线贴图；同一图像若同时用于颜色与线性数据，会分别建立 sRGB 和 UNORM 资源。[model_importer.cpp](src/resource/importer/model_importer.cpp)
+
+每个 `Mesh` 在登记时确定共享顶点/索引缓冲中的元素范围，局部索引不重写；`AssetsDB::upload()` 一次性分配 GPU Buffer，`BufferUploader` 通过暂存 Buffer 批量复制并用 Fence 等待完成。全局材质 Buffer 的每条 `GpuMaterial` 固定为 96 字节，包含材质因子、Alpha Mask 标志及五个纹理索引。`Material::buffer_index` 指向该记录，纹理索引与 `ResourceId<Texture>` 数值一致，几何片元着色器据此索引描述符数组。上传开始后数据库不再接收新的 Mesh 或 Material。[assets_db.cpp](src/resource/storage/assets_db.cpp) · [material.hpp](include/resource/gpu/material.hpp)
+
+材质纹理使用 `R8G8B8A8_SRGB` 或 `R8G8B8A8_UNORM`。`Texture` 根据最大边长计算完整 Mipmap 层数；上传器要求格式支持线性 Blit，并逐层执行 Transfer 布局转换、缩小采样及最终 Shader Read 布局转换。几何 Pass 使用线性过滤和各向异性采样。[texture.cpp](src/resource/texture.cpp) · [image_uploader.cpp](src/gfx/device/image_uploader.cpp)
+
+### RenderGraph：依赖排序与资源同步
+
+各 Pass 通过 `configure()` 声明节点依赖以及图像、Buffer 的读写用途。`RenderGraph::compile()` 对显式依赖执行拓扑排序，按资源在执行序列中的用途计算 Pipeline Stage、访问掩码和图像布局，并在相邻使用点之间生成 `vk::ImageMemoryBarrier` 或 `vk::BufferMemoryBarrier`。资源声明可选择 `Single` 或 `PerFrame`；后者按两个在途帧分别分配，交换链图像则作为外部资源绑定。呈现目标在最终节点后转换为 `ePresentSrcKHR`。TLAS 与 NRD 私有引导图像不属于图注册资源，其同步由对应 Pass 直接录制。实现见 [RenderGraph](src/render/render_graph.cpp)。
+
+CPU 侧并行仅作用于命令**录制**：每个节点使用当前帧独立的 Command Pool 和 Secondary Command Buffer，7 个录制回调提交给 8 线程任务池。主线程获取全部 `future` 后，将屏障和节点命令按拓扑顺序组装进一个 Primary Command Buffer；GPU 通过单次 Graphics Queue 提交执行。几何、直接光照与合成节点由主命令缓冲以动态渲染的附件范围包围。
+
+图像用途同时决定创建时需要的 `ColorAttachment`、`Sampled` 或 `Storage` 等 Usage Flag；`PerFrame` 资源按当前帧索引寻址，而 ReSTIR 的当前/最终 reservoir 使用 `Single` 资源跨帧保留数据。屏障覆盖整张图像的全部 Mipmap 与数组层，或整个 Buffer。图形节点的颜色/深度附件由图在执行节点时组装并清空；Pass 只负责录制附件内部的绘制命令。编译阶段检查循环依赖与未声明资源；录制阶段检查同一节点附件的尺寸和采样数是否一致。
+
+### 双帧同步与交换链恢复
+
+`FramesInFlight` 固定维护两个帧槽，每槽持有 Primary Command Pool、Primary Command Buffer、`image_available` Semaphore 和初始为 Signaled 的 Fence。渲染前等待当前槽 Fence，获取交换链图像并重置命令池；提交前重置 Fence。Graphics Queue 等待图像可用信号，执行主命令缓冲并触发与**交换链图像索引**对应的 `render_finished` Semaphore；Present Queue 等待后者。两类索引分离，使帧槽同步对象与交换链图像的呈现信号各自匹配。[frames_in_flight.cpp](src/gfx/frame/frames_in_flight.cpp) · [renderer.cpp](src/render/renderer.cpp)
+
+交换链优先选择 `B8G8R8A8_SRGB` 表面格式和 Mailbox 呈现模式，缺失时分别使用首个可用格式与 FIFO；图像数取最小要求加一并受最大值约束。图形/呈现队列族不同时使用 Concurrent 图像共享。窗口尺寸为零时，重建路径等待事件；恢复后等待设备空闲，以旧交换链创建新实例，并重新声明图资源、构建 RenderGraph、初始化全部 Pass。窗口尺寸变化、Acquire 的 `OUT_OF_DATE`，以及 Acquire/Present 的 `SUBOPTIMAL` 或 Present 的 `OUT_OF_DATE` 都进入此路径。[swapchain.cpp](src/gfx/frame/swapchain.cpp)
+
+### GPU 视锥剔除与间接绘制
+
+`CullingPass::prepare()` 将场景中每个 `MeshRenderer` 的 `Primitive` 展平成一条 240 字节渲染实例记录，并写入按帧分配、持久映射的上传 Buffer。记录包含当前/上一帧模型矩阵、法线矩阵、网格模型空间 AABB、索引范围、材质索引和运动有效标志。相机 View-Projection 矩阵提取 Vulkan ZO 裁剪空间的六个视锥平面，连同实例数和最大命令数写入 112 字节 Push Constant。[culling_pass.cpp](src/render/pass/culling/culling_pass.cpp)
+
+`GeometryPass` 绑定共享顶点/索引 Buffer 和材质描述符后，以 `drawIndexedIndirectCount()` 读取 GPU 生成的命令与计数。可见数量无需回读 CPU；每帧最多容纳 65,536 个 `Primitive` 实例。G-buffer 同时记录由上一帧模型与相机矩阵计算的运动向量，供降噪和可选的 ReSTIR 时域复用使用。[geometry_pass.cpp](src/render/pass/geometry/geometry_pass.cpp)
+
+剔除命令先用 `fillBuffer` 将逐帧可见计数清零，再以 Transfer→Compute 屏障保证计算着色器读取到清零结果。每个 Workgroup 包含 64 个线程；线程把模型空间 AABB 中心变换到世界空间，并用模型矩阵各轴向量的绝对值计算世界空间外包盒半径，逐个测试六个视锥平面。可见实例通过 `InterlockedAdd` 取得间接命令写入位置。剔除计算的写入与 Geometry Pass 的间接命令读取之间由 RenderGraph 生成 Buffer 屏障；命令中的 `firstInstance` 保留原始实例下标，使压缩后的绘制命令仍能访问对应变换和材质。[culling.slang](shaders/compute/culling.slang)
+
+### G-buffer、材质计算与运动向量
+
+Geometry Pass 使用四个颜色附件和一个深度附件。基础色附件为 sRGB 格式，其 RGB 由基础色纹理、顶点色和材质因子相乘，Alpha 保存线性 AO；其他附件分别保存世界空间法线/粗糙度、自发光/金属度、运动向量，深度使用 `D32_SFLOAT`。法线贴图先从 `[0,1]` 解码到切线空间，再用正交化切线、副切线和世界法线变换；Metallic-Roughness 纹理按 glTF 的 G/B 通道读取。Alpha Mask 在片元阶段依据 Cutoff 执行裁剪，因此被裁剪像素不写入 G-buffer。[geometry_fragment.slang](shaders/fragment/geometry_fragment.slang)
+
+`CullingPass` 按实体 ID 保存上一帧模型矩阵；只有上一帧仍是同一模型资源时，实例运动才标记为可用。Geometry Pass 同时保存上一帧相机 View-Projection 矩阵。顶点着色器分别计算当前与上一帧 Clip 坐标；片元着色器在上一帧投影位于有效视域内时输出 `previousUV − currentUV`，Z 通道为上一帧与当前 View Depth 之差，W 通道标记有效性。首次渲染、模型 ID 变化或无效投影均产生无效运动记录，NRD 引导着色器对此写入无效运动哨兵值。[geometry_vertex.slang](shaders/vertex/geometry_vertex.slang) · [direct_light_denoise.slang](shaders/compute/direct_light_denoise.slang)
+
+### BLAS/TLAS 与光线查询
+
+资产上传完成后，`AssetsDB::build_blas()` 按网格创建 BLAS。三角形数据直接引用共享顶点/索引 Buffer 的设备地址：顶点位置为 `R32G32B32_SFLOAT`，索引为 32 位整数，网格的顶点偏移与首索引决定该 BLAS 的输入范围。构建阶段按设备要求对齐暂存地址，以一块满足最大需求的 Scratch Buffer 依次构建各个 BLAS，并在相邻构建之间插入加速结构写入屏障。BLAS 的资源 ID 与对应 Mesh ID 保持一致，供场景实例直接查找。[assets_db.cpp](src/resource/storage/assets_db.cpp)
+
+`TlasBuildPass` 遍历场景实体及其模型的 `Primitive`，为每个 Primitive 写入一条 64 字节的 Vulkan 加速结构实例记录。记录包含由模型矩阵转置布局得到的 3 × 4 变换、BLAS 设备地址、实例索引和 `0xFF` 可见性掩码；实例 Buffer 按在途帧分别分配，Host 写入后通过 Host→Acceleration Structure Build 屏障同步。TLAS 和 Scratch Buffer 同样按帧持有。每个帧槽首次使用时执行 Build，随后 `prepare()` 直接返回，因此场景实体或变换变化不会触发 TLAS 更新。[tlas_build_pass.cpp](src/render/pass/tlas_build/tlas_build_pass.cpp)
+
+ReSTIR 和直接光照着色器以 `RayQuery` 对 TLAS 执行遮挡或最近命中查询，阴影射线起点沿表面法线偏移。查询强制将三角形视为不透明；它使用几何加速结构中的网格数据，不执行 Geometry Pass 的 Alpha Mask 片元裁剪。[restir_di.slangh](shaders/common/restir_di.slangh) · [direct_light_fragment.slang](shaders/fragment/direct_light_fragment.slang)
+
+### ReSTIR DI：候选采样与空间复用
+
+每个像素持有一条 32 字节 `Reservoir`，字段包括光源索引、球面采样坐标、归一化权重、目标函数值、候选数、深度，以及压缩的法线/粗糙度/金属度。初始阶段从点光源集合均匀抽取光源，再以两个 16 位分量确定光源球面上的采样位置。目标函数是基于漫反射加 GGX 镜面 BRDF、光源强度和距离衰减所得直接光照贡献的亮度。候选权重为目标值乘光源数量，按加权 reservoir 更新选中样本；归一化权重为累计权重除以候选数与选中目标值。初始样本还要通过 `RayQuery` 验证可见性。[restir_di.slangh](shaders/common/restir_di.slangh) · [restir_di_initial_temporal.slang](shaders/compute/restir_di_initial_temporal.slang)
+
+空间阶段以随机旋转的低差异序列在屏幕圆盘内选择邻居。只有线性视深度的相对差、法线夹角余弦、粗糙度差和金属度差通过阈值检查时，邻居 reservoir 才参与合并；其样本在当前表面重新计算目标函数，并以“新目标值 × 邻居归一化权重 × 邻居候选数”进入加权更新。默认配置为每像素 1 个初始候选、5 个空间邻居、30 像素半径；深度相对阈值为 0.1，法线余弦下限约为 0.906，粗糙度与金属度差阈值均为 0.2。代码包含通过运动向量读取上一帧最终 reservoir 的时域路径，当前默认设置关闭该路径、开启空间复用。[restir_di_spatial.slang](shaders/compute/restir_di_spatial.slang) · [restir_di_pass.hpp](include/render/pass/restir_di/restir_di_pass.hpp)
+
+直接光照阶段从最终 reservoir 读取选中的球面光源样本，重新查询其可见性，并计算漫反射和镜面贡献；无有效样本时仍为两个分量分别发射一次方向采样射线，以生成降噪所需的首段命中距离。[direct_light_fragment.slang](shaders/fragment/direct_light_fragment.slang)
+
+### NRD RELAX：双分辨率信号链
+
+直接光照 Pass 只在全分辨率像素坐标均为偶数时，将漫反射写入坐标右移一位的半分辨率 Storage Image；镜面始终写入全分辨率颜色附件。两个输入信号的 RGB 由已计算的直接光照分量除以对应材质因子，并限制在 `[0, 250]`；Alpha 是限制在 FP16 有限范围内的命中距离。没有有效 ReSTIR 样本时，着色器对漫反射与镜面分别采样一条方向射线取得降噪所需的命中距离。[direct_light_fragment.slang](shaders/fragment/direct_light_fragment.slang)
+
+降噪引导计算着色器用投影参数将 G-buffer 深度转换为线性 View-Z，把世界法线、粗糙度和材质分类打包为 `R10_G10_B10_A2_UNORM`，并生成全分辨率与半分辨率两套深度、法线和运动数据。无效运动写入 `(100, 100, 0, 0)` 哨兵值；半分辨率引导数据取对应 2 × 2 区域的偶数坐标像素。`DirectLightDenoisePass` 通过 NRI 分别建立 `RELAX_DIFFUSE` 和 `RELAX_SPECULAR` 集成实例，传入当前/上一帧相机矩阵。首帧设置 `CLEAR_AND_RESTART`，之后为 `CONTINUE`；默认 Atrous 迭代数为 1，两个分量的最大累积帧数为 30。[direct_light_denoise.slang](shaders/compute/direct_light_denoise.slang) · [direct_light_denoise_pass.cpp](src/render/pass/direct_light_denoise/direct_light_denoise_pass.cpp)
+
+最终合成在需要补齐半分辨率漫反射的像素上检查相邻 2 × 2 个低分辨率候选，仅接受法线点积达到阈值的候选，并选线性 View-Z 差最小者。合成阶段将降噪后的漫反射与全分辨率镜面分别乘回材质因子，再求和写入交换链图像。无几何像素输出黑色；这条路径没有叠加 G-buffer 中的自发光 RGB。[direct_light_composite_fragment.slang](shaders/fragment/direct_light_composite_fragment.slang)
+
+### 四层 Value Noise 与可见方块生成
+
+`TerrainGenerator` 为固定的 128 × 128 网格计算高度图。整数坐标经种子哈希得到格点值，格点间使用五次平滑曲线和双线性插值形成 Value Noise；四个 Octave 逐层将采样频率加倍、振幅减半，再以振幅和归一化。结果映射到配置高度范围并四舍五入，默认高度为 1–10 个方块，噪声基准频率为每方块 0.035。应用启动时从 `std::random_device` 取得种子，因此默认启动场景的地形分布可变。[terrain_generator.cpp](src/scene/terrain_generator.cpp) · [application.cpp](src/core/application.cpp)
+
+生成实体时，每一列固定保留最底层方块与顶层方块。内部列还根据四个相邻列的最小高度添加侧面可能露出的方块；边界列将外部视为空气。每个保留方块都是持有同一个立方体模型 ID 的独立 `MeshRenderer` 实体，其位置位于网格单元中心，尺寸由 `block_size` 控制。该阶段按方块过滤内部体积，不对单个立方体的面做裁剪；后续仍通过通用 GPU 视锥剔除与间接绘制路径处理。[terrain_generator.cpp](src/scene/terrain_generator.cpp)
 
 ## 构建与运行
 
-克隆项目：
+当前 `xmake.lua` 固定 **Windows x64、MSVC、C++20**。构建需要 Xmake、可在 `PATH` 调用的 `slangc`、Git，以及支持 Vulkan 1.4 的显卡、驱动和 Vulkan SDK。Xmake 声明了 Vulkan SDK、GLFW、GLM、VMA、stb_image、Assimp 6.0.4 和 CMake 依赖。GPU 还须支持图形/计算及呈现队列、Vulkan 动态渲染与间接绘制计数、描述符数组、Buffer Device Address、Acceleration Structure、Ray Query 等代码中启用的特性；纹理和 G-buffer 格式支持在初始化时检查。
 
-```powershell
-git clone https://github.com/th1nk2r-git/th1nk2r_renderer.git
-Set-Location .\th1nk2r_renderer
-```
-
-Debug 构建：
-
-```powershell
-xmake f -m debug
-xmake run th1nk2r_renderer
-```
-
-Release 构建：
+首次构建若未指定 SDK 路径，`xmake/rules/nrd.lua` 会获取固定的 **NRD 4.18.0** 源码并用 CMake 构建 NRD/NRI，因此依赖下载与首次准备需要网络。也可以同时设置 `NRD_SDK_ROOT` 和 `NRI_SDK_ROOT` 指向完整的本地 SDK。`slangc` 将 `shaders/vertex`、`shaders/fragment`、`shaders/compute` 下的 `.slang` 编译到 `bin/spv/`；Xmake 将 `assets/` 和 `NRD.dll`、`NRI.dll` 部署到 `bin/`。
 
 ```powershell
 xmake f -m release
-xmake run th1nk2r_renderer
-```
-
-构建后会得到：
-
-```text
-bin/
-├─ th1nk2r_renderer.exe
-├─ spv/                            # 编译后的图形与计算着色器
-└─ assets/                         # 部署后的运行时资产
-```
-
-程序使用 `./spv` 和 `./assets` 相对路径。若不通过 `xmake run` 启动，请从 `bin/` 目录运行：
-
-```powershell
+xmake build th1nk2r_renderer
 Push-Location .\bin
 .\th1nk2r_renderer.exe
 Pop-Location
 ```
 
-> `xmake/rules/shader.lua` 按需调用 `slangc`，以 `main` 为入口将 `shaders/vertex`、`shaders/fragment` 和 `shaders/compute` 中的 `.slang` 编译到 `bin/spv/`。`xmake/rules/nrd.lua` 负责准备 NRD/NRI SDK；主 `xmake.lua` 将 `assets/` 复制到 `bin/assets/`。
+调试构建使用 `xmake f -m debug` 后重新构建。Debug 模式检测到 `VK_LAYER_KHRONOS_validation` 时启用验证层和 Debug Messenger；不可用时输出警告。程序按 `./spv/` 和 `./assets/` 的相对路径读取运行时文件，因此直接执行时当前工作目录为 `bin/`。
 
-## 操作方式
+### 操作
 
-程序启动后默认捕获鼠标；系统支持时会启用 Raw Mouse Motion。
+程序启动时捕获鼠标；平台支持时开启 Raw Mouse Motion。
 
-| 输入 | 操作 |
+| 输入 | 功能 |
 | --- | --- |
-| 鼠标移动 | 旋转视角 |
+| 鼠标移动 | 调整视角 |
 | `W` / `S` | 前进 / 后退 |
 | `A` / `D` | 左移 / 右移 |
 | `Space` / `Left Ctrl` | 上升 / 下降 |
-| `Left Shift` 或 `Right Shift` | 加速移动 |
-| 按住 `Left Alt` 或 `Right Alt` | 临时释放鼠标，并暂停相机旋转和移动 |
-| 释放 `Alt` | 重新捕获鼠标 |
+| `Left Shift` / `Right Shift` | 加速移动 |
+| 按住 `Left Alt` / `Right Alt` | 释放鼠标，并暂停相机移动与旋转 |
 
-## 资源约定与定制
+## 目录结构
 
-`ModelImporter::import_models()` 会递归扫描指定目录（当前为 `assets/models/`），识别 `.obj`、`.fbx`、`.gltf` 和 `.glb`。模型注册名遵循以下规则：
-
-- 默认使用模型文件所在文件夹的名字。例如，`assets/models/sponza/Sponza.gltf` 注册为 `sponza`，`assets/models/blocks/rocky_soil_smooth/rocky_soil_smooth_preview.glb` 注册为 `rocky_soil_smooth`。
-- 名称与扫描根目录、上层目录和模型文件名无关；直接放在扫描根目录中的模型使用该根目录的文件夹名。
-- 不同模型必须拥有唯一注册名。同一文件夹中的多个模型，或不同位置的同名文件夹会产生重名，导入器会报错；建议每个模型放在名称唯一的独立目录中。
-
-`ModelImporter::import_model()` 支持导入单个模型，默认同样使用模型所在文件夹的名字，也可以传入显式名称。两个导入接口暂存 CPU 几何与材质数据、登记 Mesh 范围和 Material Buffer 索引，并排队上传纹理；登记时不会创建共享 GPU Buffer。全部模型导入完成后，应用调用 `assets_.upload(device_context_.allocator(), device_context_.buffer_uploader())`，再提交 Buffer/Image 上传并初始化渲染 Pass。
-
-共享几何缓冲区只构建一次，开始排队上传后禁止继续添加 Mesh，重复构建会抛出异常。Mesh 的 `vertex_offset`、`first_index` 分别以顶点、索引为单位；上传时才换算为字节偏移。每帧由 Culling Compute Shader 为每个 Mesh 实例执行一次 AABB 视锥测试，可见实例通过原子计数追加 `VkDrawIndexedIndirectCommand`，Geometry Pass 随后使用 `drawIndexedIndirectCount()` 提交可见集合。
-
-不启动窗口或 Vulkan 设备的 Mesh 范围、Bounds 和资源 ID 检查：
-
-```powershell
-xmake build assets_db_tests
-xmake run assets_db_tests
+```text
+assets/             模型、纹理、HDR 文件与第三方资产授权说明
+docs/images/        场景截图
+include/            各模块公开类型和接口
+src/                core、gfx、io、platform、render、resource、scene 的实现
+shaders/            Slang 源码：vertex、fragment、compute、common
+xmake/rules/        Slang 编译规则与 NRD/NRI SDK 准备规则
+xmake.lua           目标、依赖与构建配置
 ```
 
-`prepare_resources()` 应传入尚未初始化绑定的材质 ID；重复传入同一材质会抛出异常。当前环境图只支持初始化一次，首次渲染前必须调用 `set_environment()`，重复设置同样会抛出异常。
+## 授权
 
-当前示例启动时导入 `assets/models/` 下的全部模型，包括 `blocks/` 中的材质预览 GLB，在 `Application::setup_scene()` 中通过 `TerrainGenerator` 创建泥土地形。环境图在 `Application::run()` 中加载，路径为 `assets/models/sponza/mud_road_puresky_2k.hdr`。替换默认示例时可分别修改地形使用的模型注册名和环境图路径。
-
-### 方块地形
-
-地形生成器位于 `include/scene/terrain_generator.hpp` 和 `src/scene/terrain_generator.cpp`。App 持有生成器以保留高度图，并在场景初始化时传入 `Scene&`、方块模型 ID 和配置：
-
-```cpp
-TerrainConfig config{.seed = 12345, .min_height = 4, .max_height = 24};
-terrain_generator_.generate(
-    scene_, assets_.query_model_id("rocky_soil_smooth"), config
-);
-```
-
-默认场景在每次启动时随机选取 seed；将 `setup_scene()` 中的 seed 改为固定值可复现地形。`noise_frequency` 控制起伏尺度，取值为 `(0, 1]`；更小的值产生更宽的山坡。高度表示从 `y=0` 开始堆叠的方块层数，须满足 `1 <= min_height <= max_height`，两者相等时生成平地。`block_size` 为正的方块边长，`origin` 为地形底面的最小角点；默认边长 1、原点 `(-64, 0, -64)`，地形覆盖 XZ 平面的 `[-64, 64]`。
-
-模型应是以原点为中心的单位立方体。生成器补齐顶面、侧面、地图边缘和底面，只创建至少有一个面外露的方块；每个方块仍使用完整模型，当前没有面级裁剪或实例化。`height_map()` 返回按 `z * 128 + x` 索引的高度图，`height_at(x, z)` 提供坐标查询。`generate()` 返回添加的实体数，保留相机、灯光和已有实体；重复调用会追加地形，替换整块场景时应由调用方先清理实体。
-
-不启动窗口或 Vulkan 设备的地形检查：
-
-```powershell
-xmake build terrain_generator_tests
-xmake run terrain_generator_tests
-```
-
-### 创建普通实体
-
-创建可绘制实体的方式：
-
-```cpp
-auto& entity = scene_.create_entity();
-entity.add_component<Transform>();
-entity.add_component<MeshRenderer>(assets_.query_model_id("sponza"));
-```
-
-`create_entity()` 创建空实体，不自动添加组件；需要包含 `scene/components/transform.hpp` 和 `scene/components/mesh_renderer.hpp`。
-
-材质导入支持以下数据：
-
-| 数据 | 处理方式 |
-| --- | --- |
-| Base Color | 因子 × 顶点色 × sRGB 纹理 |
-| Metallic / Roughness | 材质因子 × 线性数据纹理 B/G 通道 |
-| Normal | 切线空间法线贴图与强度参数 |
-| Occlusion | 线性纹理 R 通道与强度参数 |
-| Emissive | 自发光颜色因子 × sRGB 纹理 |
-| Alpha Mask | glTF `MASK` 模式与 Alpha Cutoff；阴影 Pass 同步裁剪 |
-
-## 关键实现参数
-
-| 参数 | 当前值 |
-| --- | --- |
-| Frames in Flight | 2 |
-| 命令录制工作线程 | 8 个常驻线程 |
-| 每帧命令录制任务 | 2 项；分别录制 Shadow 与 Forward Command Buffer |
-| 每个在途帧的录制槽位 | 2 个；每个槽位独占 1 个 Command Pool 与 1 个 `eOneTimeSubmit` Primary Command Buffer |
-| 帧内命令提交 | 1 次 Graphics Queue Submit；依次提交 Shadow、Forward 两个 Command Buffer |
-| 默认窗口 | 1200 × 800 |
-| Timer 最大时间步长 | 0.05 秒；进入主循环和 Skipped 后重置基准 |
-| 视锥剔除 | Forward Pass；Mesh 粒度；世界空间 AABB；Vulkan ZO 六平面测试 |
-| 阴影贴图 | 每个在途帧独立的 Cubemap Array；每面 512 × 512，共 48 层 |
-| 最大点光源数 | 1024 |
-| 最大投影点光源数 | 8；按场景顺序选择，超出的点光源仍参与照明 |
-| 最大材质数 | 每个 Pass 的材质绑定容量为 1024 |
-| PCSS 采样 | 24 次遮挡物搜索；找到遮挡物后再进行 24 次过滤 |
-| Environment Cubemap | 512 × 512，完整 Mip 链 |
-| Irradiance Cubemap | 32 × 32 |
-| Prefiltered Cubemap | 128 × 128，完整 Mip 链 |
-| BRDF LUT | 256 × 256 |
-| IBL 积分采样 | 256 |
-
-## 常见问题
-
-### 构建时报错：`slangc` 无法识别
-
-安装 Slang，并将包含 `slangc.exe` 的目录加入 `PATH`。重新打开终端后运行 `slangc -version` 验证。
-
-### 启动时报错：无法读取 `.spv` 或资源文件
-
-先完整执行一次 `xmake`，确认 `bin/spv/` 和 `bin/assets/` 已生成。手动启动时必须将 `bin/` 作为当前工作目录。
-
-### 启动时报错：`failed to find a suitable GPU!`
-
-确认显卡驱动支持 Vulkan 1.4，并满足同一队列族的图形/计算能力、呈现、`VK_KHR_swapchain`、`imageCubeArray` 与 `shaderDrawParameters` 要求。
-
-### Debug 构建提示 Validation Layer 不可用
-
-程序会输出警告并继续运行。安装带有 `VK_LAYER_KHRONOS_validation` 的 Vulkan SDK 后即可启用验证层。
-
-## License
-
-本项目原创源代码、Slang 着色器与项目文档采用 [MIT License](LICENSE)。
-
-`assets/` 下的模型、纹理、HDR 及其他媒体文件不属于仓库根目录的 MIT 授权范围，继续受原作者许可条款约束。发布或商业使用前请务必查看 [assets/README.md](assets/README.md)；其中部分示例资产的再分发授权仍待确认。
-
-第三方依赖分别适用其各自许可证。
+项目原创代码、着色器与文档按仓库根目录的 [MIT License](LICENSE) 授权。`assets/` 中的第三方模型、纹理与 HDR 文件适用各自授权，详见 [assets/README.md](assets/README.md)；其中 Sponza 文件的授权状态在资产说明中标记为待核实。第三方库及 SDK 适用其各自许可证。

@@ -30,11 +30,11 @@ auto Application::run() -> void {
 }
 
 auto Application::setup_scene() -> void {
-    /*TerrainGenerator terrain_generator_;
+    TerrainGenerator terrain_generator_;
     const auto config = TerrainConfig{.seed = std::random_device{}()};
     terrain_generator_.generate(
-        scene_, assets_.query_model_id("rocky_soil_smooth"), config
-    );*/
+        scene_, assets_.query_model_id("dense_green_grass_sharp"), config
+    );
     scene_.camera().set_position(glm::vec3{0.0F, 20.0F, 0.0F});
     scene_.camera().set_orientation(
         glm::quat{glm::vec3{glm::radians(-20.0F), 0.0F, 0.0F}}
@@ -47,6 +47,14 @@ auto Application::setup_scene() -> void {
         .radius = 0.5F,
         .color = glm::vec3{1.0F},
         .intensity = 80.0F
+    });
+
+    scene_.add_point_light(PointLight{
+        .position = glm::vec3{10.0F, 50.0F, 10.0F},
+        .range = 2000.0F,
+        .radius = 0.5F,
+        .color = glm::vec3{1.0F},
+        .intensity = 10000.0F
     });
 
     auto& sponza = scene_.create_entity();
