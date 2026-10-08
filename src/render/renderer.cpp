@@ -6,11 +6,10 @@
 #include <utility>
 
 #include "render/pass/culling/culling_pass.hpp"
-#include "render/pass/direct_light/direct_light_pass.hpp"
-#include "render/pass/direct_light_composite/direct_light_composite_pass.hpp"
-#include "render/pass/direct_light_denoise/direct_light_denoise_pass.hpp"
+#include "render/pass/light_composite/light_composite_pass.hpp"
+#include "render/pass/denoise/denoise_pass.hpp"
 #include "render/pass/geometry/geometry_pass.hpp"
-#include "render/pass/restir_di/restir_di_pass.hpp"
+#include "render/pass/global_light/global_light_pass.hpp"
 #include "render/pass/tlas_build/tlas_build_pass.hpp"
 
 Renderer::Renderer(
@@ -58,33 +57,25 @@ auto Renderer::create_render_pass() -> void {
         render_graph_,
         assets_
     ));
-    auto restir_pass = std::make_unique<RestirDiPass>(
-        device_context_.device(),
-        device_context_.allocator(),
-        render_graph_,
-        tlas_build_pass_reference
-    );
-    const auto& restir_pass_reference = *restir_pass;
-    render_passes_.push_back(std::move(restir_pass));
-    render_passes_.push_back(std::make_unique<DirectLightPass>(
-        device_context_.device(),
-        render_graph_,
-        tlas_build_pass_reference,
-        restir_pass_reference
+    render_passes_.push_back(std::make_unique<GlobalLightPass>(
+        device_context_.device(), device_context_.allocator(), render_graph_, assets_,
+        tlas_build_pass_reference, swapchain_.extent()
     ));
-    render_passes_.push_back(std::make_unique<DirectLightDenoisePass>(device_context_, render_graph_, swapchain_.extent()));
-    render_passes_.push_back(std::make_unique<DirectLightCompositePass>(device_context_.device(), render_graph_, restir_pass_reference));
+    render_passes_.push_back(std::make_unique<DenoisePass>(device_context_, render_graph_, swapchain_.extent()));
+    render_passes_.push_back(std::make_unique<LightCompositePass>(
+        device_context_.device(), device_context_.allocator(), render_graph_
+    ));
 }
 
 auto Renderer::create_render_resources() -> void {
+    TlasBuildPass::declare_resources(render_graph_);
     CullingPass::declare_resources(render_graph_);
     GeometryPass::declare_resources(
         device_context_.device(),
         render_graph_,
         swapchain_.extent()
     );
-    RestirDiPass::declare_resources(device_context_.device(), render_graph_, swapchain_.extent());
-    DirectLightPass::declare_resources(device_context_.device(), render_graph_, swapchain_.extent());
+    GlobalLightPass::declare_resources(render_graph_, swapchain_.extent());
 }
 
 auto Renderer::init_render_pass() -> void {
@@ -108,7 +99,7 @@ auto Renderer::build_render_graph() -> void {
         render_pass->configure(render_graph_);
     }
 
-    render_graph_.set_output(DirectLightCompositePass::output_resource);
+    render_graph_.set_output(LightCompositePass::output_resource);
     render_graph_.compile();
 }
 

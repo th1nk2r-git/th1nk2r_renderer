@@ -27,14 +27,13 @@ namespace {
             acceleration_structure_features{};
         acceleration_structure_features.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-        VkPhysicalDeviceRayQueryFeaturesKHR ray_query_features{};
-        ray_query_features.sType =
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+        VkPhysicalDeviceRayTracingPipelineFeaturesKHR ray_tracing_features{};
+        ray_tracing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
         vulkan11_features.pNext = &vulkan12_features;
         vulkan12_features.pNext = &vulkan13_features;
         vulkan13_features.pNext = &vulkan14_features;
         vulkan14_features.pNext = &acceleration_structure_features;
-        acceleration_structure_features.pNext = &ray_query_features;
+        acceleration_structure_features.pNext = &ray_tracing_features;
         VkPhysicalDeviceFeatures2 features{};
         features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         features.pNext = &vulkan11_features;
@@ -48,11 +47,11 @@ namespace {
             features.features
                 .shaderSampledImageArrayDynamicIndexing == VK_TRUE &&
             features.features.shaderStorageImageExtendedFormats == VK_TRUE &&
-            features.features.fragmentStoresAndAtomics == VK_TRUE &&
             vulkan11_features.shaderDrawParameters == VK_TRUE &&
             vulkan12_features.drawIndirectCount == VK_TRUE &&
             vulkan12_features.runtimeDescriptorArray == VK_TRUE &&
             vulkan12_features.descriptorBindingPartiallyBound == VK_TRUE &&
+            vulkan12_features.shaderSampledImageArrayNonUniformIndexing == VK_TRUE &&
             vulkan12_features.bufferDeviceAddress == VK_TRUE &&
             vulkan13_features.dynamicRendering == VK_TRUE &&
             vulkan13_features.synchronization2 == VK_TRUE &&
@@ -60,7 +59,7 @@ namespace {
             (normal_format.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0 &&
             (normal_format.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0 &&
             acceleration_structure_features.accelerationStructure == VK_TRUE &&
-            ray_query_features.rayQuery == VK_TRUE;
+            ray_tracing_features.rayTracingPipeline == VK_TRUE;
     }
 }
 
@@ -111,7 +110,7 @@ auto Device::select_physical_device(
             VK_KHR_SWAPCHAIN_EXTENSION_NAME,
             VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
             VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-            VK_KHR_RAY_QUERY_EXTENSION_NAME
+            VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME
         };
         for (const auto& extension : physical_device.enumerateDeviceExtensionProperties()) {
             required_extensions.erase(extension.extensionName);
@@ -182,7 +181,7 @@ auto Device::create_logical_device(
         vk::KHRSwapchainExtensionName,
         vk::KHRAccelerationStructureExtensionName,
         vk::KHRDeferredHostOperationsExtensionName,
-        vk::KHRRayQueryExtensionName
+        vk::KHRRayTracingPipelineExtensionName
     };
 
     vk::PhysicalDeviceFeatures required_features{};
@@ -193,7 +192,6 @@ auto Device::create_logical_device(
         .setDrawIndirectFirstInstance(true)
         .setShaderSampledImageArrayDynamicIndexing(true)
         .setShaderStorageImageExtendedFormats(true);
-    required_features.setFragmentStoresAndAtomics(true);
     vk::PhysicalDeviceVulkan11Features required_vulkan11_features{};
     required_vulkan11_features.setShaderDrawParameters(true);
     vk::PhysicalDeviceVulkan12Features required_vulkan12_features{};
@@ -201,6 +199,7 @@ auto Device::create_logical_device(
         .setDrawIndirectCount(true)
         .setRuntimeDescriptorArray(true)
         .setDescriptorBindingPartiallyBound(true)
+        .setShaderSampledImageArrayNonUniformIndexing(true)
         .setBufferDeviceAddress(true);
     vk::PhysicalDeviceVulkan13Features required_vulkan13_features{};
     required_vulkan13_features.setDynamicRendering(true).setSynchronization2(true);
@@ -209,17 +208,15 @@ auto Device::create_logical_device(
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR
         required_acceleration_structure_features{};
     required_acceleration_structure_features.setAccelerationStructure(true);
-    vk::PhysicalDeviceRayQueryFeaturesKHR required_ray_query_features{};
-    required_ray_query_features.setRayQuery(true);
+    vk::PhysicalDeviceRayTracingPipelineFeaturesKHR required_ray_tracing_features{};
+    required_ray_tracing_features.setRayTracingPipeline(true);
     required_vulkan11_features.setPNext(&required_vulkan12_features);
     required_vulkan12_features.setPNext(&required_vulkan13_features);
     required_vulkan13_features.setPNext(&required_vulkan14_features);
     required_vulkan14_features.setPNext(
         &required_acceleration_structure_features
     );
-    required_acceleration_structure_features.setPNext(
-        &required_ray_query_features
-    );
+    required_acceleration_structure_features.setPNext(&required_ray_tracing_features);
 
     const vk::DeviceCreateInfo create_info{
         .pNext = &required_vulkan11_features,

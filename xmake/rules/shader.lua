@@ -5,11 +5,25 @@ rule("shader.spirv")
 
     on_buildcmd_file(function (target, batchcmds, sourcefile, opt)
         local stage = path.filename(path.directory(sourcefile))
+        if stage == "ray_tracing" then
+            local ray_stages = {
+                global_light_raygen = "raygeneration",
+                global_light_closest_hit = "closesthit",
+                global_light_any_hit = "anyhit",
+                global_light_miss = "miss",
+                global_light_shadow_miss = "miss"
+            }
+            stage = ray_stages[path.basename(sourcefile)]
+        end
         assert(
             stage == "vertex" or
             stage == "fragment" or
-            stage == "compute",
-            "shader must be placed in shaders/vertex, shaders/fragment, or shaders/compute"
+            stage == "compute" or
+            stage == "raygeneration" or
+            stage == "closesthit" or
+            stage == "anyhit" or
+            stage == "miss",
+            "unsupported shader stage for " .. sourcefile .. ": " .. tostring(stage)
         )
 
         local output_file = path.join(
@@ -33,19 +47,10 @@ rule("shader.spirv")
             sourcefile
         })
         batchcmds:add_depfiles(sourcefile)
-        if path.basename(sourcefile):find("restir_di", 1, true) or path.basename(sourcefile) == "direct_light_fragment" then
-            batchcmds:add_depfiles("shaders/common/restir_di.slangh")
+        if path.basename(sourcefile):find("^global_light_") then
+            batchcmds:add_depfiles("shaders/ray_tracing/global_light.slangh")
         end
-        if path.basename(sourcefile) == "direct_light_fragment" then
-            batchcmds:add_depfiles("shaders/common/direct_light_nrd.slangh")
-        end
-        if path.basename(sourcefile) == "direct_light_composite_fragment" then
-            batchcmds:add_depfiles("shaders/common/restir_di.slangh")
-            batchcmds:add_depfiles("shaders/common/direct_light_nrd.slangh")
-            batchcmds:add_depfiles(path.join(nrd_shaders, "NRD.hlsli"))
-            batchcmds:add_depfiles(path.join(nrd_shaders, "NRDConfig.hlsli"))
-        end
-        if path.basename(sourcefile) == "direct_light_denoise" then
+        if path.basename(sourcefile) == "denoise" then
             batchcmds:add_depfiles(path.join(nrd_shaders, "NRD.hlsli"))
             batchcmds:add_depfiles(path.join(nrd_shaders, "NRDConfig.hlsli"))
         end

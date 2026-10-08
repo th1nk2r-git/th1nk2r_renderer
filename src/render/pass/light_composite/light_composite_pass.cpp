@@ -1,7 +1,7 @@
-#include "render/pass/direct_light_composite/direct_light_composite_pass.hpp"
+#include "render/pass/light_composite/light_composite_pass.hpp"
 
 #include <array>
-#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <limits>
@@ -10,23 +10,35 @@
 #include <utility>
 #include <vector>
 
+#include <glm/matrix.hpp>
+#include <glm/vec4.hpp>
+
 #include "gfx/device/device.hpp"
+#include "gfx/device/memory_allocator.hpp"
 #include "gfx/pipeline/graphics_pipeline.hpp"
 #include "gfx/resource/buffer.hpp"
 #include "io/spirv_loader.hpp"
-#include "render/pass/direct_light_denoise/direct_light_denoise_pass.hpp"
+#include "render/pass/denoise/denoise_pass.hpp"
 #include "render/pass/geometry/geometry_pass.hpp"
-#include "render/pass/restir_di/restir_di_pass.hpp"
 #include "render/render_graph.hpp"
 #include "scene/scene.hpp"
 
 namespace {
-    constexpr uint32_t sampled_image_count = 8;
+    constexpr uint32_t sampled_image_count = 6;
+
+    struct alignas(16) GpuCompositeFrame {
+        glm::mat4 inverse_view_projection{1.0F};
+        glm::vec4 camera_position{0.0F};
+        glm::uvec4 viewport{0U};
+    };
+
+    static_assert(sizeof(GpuCompositeFrame) == 96);
+    static_assert(offsetof(GpuCompositeFrame, camera_position) == 64);
+    static_assert(offsetof(GpuCompositeFrame, viewport) == 80);
 
     struct CommandSlot {
         vk::raii::CommandPool pool = nullptr;
         vk::raii::CommandBuffer command_buffer = nullptr;
-        std::array<float, 4> depth_and_normal{};
     };
 
     auto create_descriptor_set_layout(const Device& device) -> vk::raii::DescriptorSetLayout {
@@ -43,9 +55,8 @@ namespace {
 
     auto create_pipeline_layout(const Device& device, const vk::raii::DescriptorSetLayout& descriptor_set_layout) -> vk::raii::PipelineLayout {
         const std::array layouts{*descriptor_set_layout};
-        const vk::PushConstantRange push_range{vk::ShaderStageFlagBits::eFragment, 0, sizeof(std::array<float, 4>)};
         vk::PipelineLayoutCreateInfo create_info{};
-        create_info.setSetLayouts(layouts).setPushConstantRanges(push_range);
+        create_info.setSetLayouts(layouts);
         return device.logical_device().createPipelineLayout(create_info);
     }
 
@@ -56,14 +67,14 @@ namespace {
     }
 
     auto create_pipeline(const Device& device, const RenderGraph& render_graph, const vk::raii::PipelineLayout& layout) -> vk::raii::Pipeline {
-        const auto vertex_shader = create_shader_module(device, "./spv/direct_light_vertex.spv");
-        const auto fragment_shader = create_shader_module(device, "./spv/direct_light_composite_fragment.spv");
+        const auto vertex_shader = create_shader_module(device, "./spv/light_composite_vertex.spv");
+        const auto fragment_shader = create_shader_module(device, "./spv/light_composite_fragment.spv");
 
         GraphicsPipelineDesc desc{};
         desc.vertex_shader = &vertex_shader;
         desc.fragment_shader = &fragment_shader;
         desc.layout = &layout;
-        desc.color_attachment_formats = {render_graph.image(DirectLightCompositePass::output_resource).format()};
+        desc.color_attachment_formats = {render_graph.image(LightCompositePass::output_resource).format()};
         desc.cull_mode = vk::CullModeFlagBits::eNone;
         desc.depth_test_enable = false;
         desc.depth_write_enable = false;
@@ -73,7 +84,7 @@ namespace {
 
     auto create_descriptor_pool(const Device& device, uint32_t frame_count) -> vk::raii::DescriptorPool {
         if (frame_count > std::numeric_limits<uint32_t>::max() / sampled_image_count) {
-            throw std::overflow_error("direct-light composite descriptor count exceeds uint32_t");
+            throw std::overflow_error("light composite descriptor count exceeds uint32_t");
         }
         const std::array sizes{
             vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, frame_count},
@@ -120,36 +131,28 @@ namespace {
     }
 }
 
-struct DirectLightCompositePass::Impl {
-    Impl(const RestirDiPass& restir, Settings value) : restir_pass(restir), settings(value) {}
+struct LightCompositePass::Impl {
+    explicit Impl(const MemoryAllocator& memory_allocator) : allocator(memory_allocator) {}
 
-    const RestirDiPass& restir_pass;
-    Settings settings;
+    const MemoryAllocator& allocator;
     vk::raii::DescriptorSetLayout descriptor_set_layout = nullptr;
     vk::raii::PipelineLayout pipeline_layout = nullptr;
     vk::raii::Pipeline pipeline = nullptr;
     vk::raii::DescriptorPool descriptor_pool = nullptr;
     std::vector<vk::raii::DescriptorSet> descriptor_sets;
+    std::vector<Buffer> frame_buffers;
     std::vector<CommandSlot> command_slots;
     bool initialized = false;
 };
 
-DirectLightCompositePass::DirectLightCompositePass(const Device& device, RenderGraph& render_graph, const RestirDiPass& restir_di_pass,
-                                                   Settings settings)
-    : RenderPass(std::string{pass_name}, device, render_graph), impl_(std::make_unique<Impl>(restir_di_pass, settings)) {}
+LightCompositePass::LightCompositePass(const Device& device, const MemoryAllocator& allocator, RenderGraph& render_graph)
+    : RenderPass(std::string{pass_name}, device, render_graph), impl_(std::make_unique<Impl>(allocator)) {}
 
-DirectLightCompositePass::~DirectLightCompositePass() = default;
+LightCompositePass::~LightCompositePass() = default;
 
-auto DirectLightCompositePass::init() -> void {
+auto LightCompositePass::init() -> void {
     if (impl_->initialized) {
-        throw std::logic_error("direct-light composite pass is already initialized");
-    }
-    if (!std::isfinite(impl_->settings.minimum_normal_dot) || impl_->settings.minimum_normal_dot < -1.0F ||
-        impl_->settings.minimum_normal_dot > 1.0F) {
-        throw std::invalid_argument("direct-light composite normal threshold must be in [-1, 1]");
-    }
-    if (sizeof(std::array<float, 4>) > device_.physical_device().getProperties().limits.maxPushConstantsSize) {
-        throw std::length_error("direct-light composite push constants exceed device limits");
+        throw std::logic_error("light composite pass is already initialized");
     }
 
     impl_->descriptor_set_layout = create_descriptor_set_layout(device_);
@@ -159,18 +162,23 @@ auto DirectLightCompositePass::init() -> void {
     const auto frame_count = render_graph_.frames_in_flight_count();
     impl_->descriptor_pool = create_descriptor_pool(device_, frame_count);
     impl_->descriptor_sets = allocate_descriptor_sets(device_, impl_->descriptor_pool, impl_->descriptor_set_layout, frame_count);
+    impl_->frame_buffers.reserve(frame_count);
 
     for (uint32_t frame = 0; frame < frame_count; ++frame) {
-        const auto buffer_info = descriptor_buffer_info(impl_->restir_pass.frame_buffer(frame));
+        impl_->frame_buffers.emplace_back(impl_->allocator, BufferDesc{
+            .size = sizeof(GpuCompositeFrame),
+            .usage = vk::BufferUsageFlagBits::eUniformBuffer,
+            .memory = BufferMemoryUsage::Upload,
+            .persistent_mapping = true
+        });
+        const auto buffer_info = descriptor_buffer_info(impl_->frame_buffers.back());
         const std::array image_infos{
-            descriptor_image_info(render_graph_.image(DirectLightDenoisePass::diffuse_resource, frame)),
-            descriptor_image_info(render_graph_.image(DirectLightDenoisePass::specular_resource, frame)),
+            descriptor_image_info(render_graph_.image(DenoisePass::diffuse_resource, frame)),
+            descriptor_image_info(render_graph_.image(DenoisePass::specular_resource, frame)),
             descriptor_image_info(render_graph_.image(GeometryPass::base_color_ao_resource, frame)),
             descriptor_image_info(render_graph_.image(GeometryPass::normal_roughness_resource, frame)),
             descriptor_image_info(render_graph_.image(GeometryPass::depth_resource, frame)),
-            descriptor_image_info(render_graph_.image(GeometryPass::emissive_metallic_resource, frame)),
-            descriptor_image_info(render_graph_.image(DirectLightDenoisePass::diffuse_view_z_resource, frame)),
-            descriptor_image_info(render_graph_.image(DirectLightDenoisePass::diffuse_normal_roughness_resource, frame))
+            descriptor_image_info(render_graph_.image(GeometryPass::emissive_metallic_resource, frame))
         };
 
         std::array<vk::WriteDescriptorSet, sampled_image_count + 1> writes{};
@@ -187,37 +195,36 @@ auto DirectLightCompositePass::init() -> void {
     impl_->initialized = true;
 }
 
-auto DirectLightCompositePass::configure(RenderGraph& render_graph) -> void {
-    render_graph.add_dependency(name(), DirectLightDenoisePass::pass_name);
-    render_graph.set_image_usage(name(), DirectLightDenoisePass::diffuse_resource, ImageUsage::FragmentSampled);
-    render_graph.set_image_usage(name(), DirectLightDenoisePass::specular_resource, ImageUsage::FragmentSampled);
+auto LightCompositePass::configure(RenderGraph& render_graph) -> void {
+    render_graph.add_dependency(name(), DenoisePass::pass_name);
+    render_graph.set_image_usage(name(), DenoisePass::diffuse_resource, ImageUsage::FragmentSampled);
+    render_graph.set_image_usage(name(), DenoisePass::specular_resource, ImageUsage::FragmentSampled);
     render_graph.set_image_usage(name(), GeometryPass::base_color_ao_resource, ImageUsage::FragmentSampled);
     render_graph.set_image_usage(name(), GeometryPass::normal_roughness_resource, ImageUsage::FragmentSampled);
     render_graph.set_image_usage(name(), GeometryPass::depth_resource, ImageUsage::FragmentSampled);
     render_graph.set_image_usage(name(), GeometryPass::emissive_metallic_resource, ImageUsage::FragmentSampled);
-    render_graph.set_image_usage(name(), DirectLightDenoisePass::diffuse_view_z_resource, ImageUsage::FragmentSampled);
-    render_graph.set_image_usage(name(), DirectLightDenoisePass::diffuse_normal_roughness_resource, ImageUsage::FragmentSampled);
     render_graph.set_image_usage(name(), output_resource, ImageUsage::ColorAttachment);
 }
 
-auto DirectLightCompositePass::prepare(const Scene& scene) -> void {
+auto LightCompositePass::prepare(const Scene& scene) -> void {
     if (!impl_->initialized) {
-        throw std::logic_error("direct-light composite pass must be initialized before preparation");
+        throw std::logic_error("light composite pass must be initialized before preparation");
     }
     const auto frame = render_graph_.current_frame_index();
-    const auto extent = render_graph_.image(output_resource).extent();
-    const auto projection = scene.camera().projection_matrix(static_cast<float>(extent.width) / static_cast<float>(extent.height));
-    impl_->command_slots.at(frame).depth_and_normal = {projection[2][2], projection[3][2], impl_->settings.minimum_normal_dot, 0.0F};
-    const auto buffer_info = descriptor_buffer_info(impl_->restir_pass.frame_buffer(frame));
-    std::array<vk::WriteDescriptorSet, 1> writes{};
-    writes[0].setDstSet(*impl_->descriptor_sets.at(frame)).setDstBinding(0)
-        .setDescriptorType(vk::DescriptorType::eUniformBuffer).setBufferInfo(buffer_info);
-    device_.logical_device().updateDescriptorSets(writes, {});
+    const auto extent = render_graph_.image(GeometryPass::depth_resource).extent();
+    const auto aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+    const auto view_projection = scene.camera().projection_matrix(aspect) * scene.camera().view_matrix();
+    const GpuCompositeFrame data{
+        .inverse_view_projection = glm::inverse(view_projection),
+        .camera_position = glm::vec4{scene.camera().position(), 1.0F},
+        .viewport = {extent.width, extent.height, 0U, 0U}
+    };
+    impl_->frame_buffers.at(frame).write(&data, sizeof(data));
 }
 
-auto DirectLightCompositePass::record() -> vk::CommandBuffer {
+auto LightCompositePass::record() -> vk::CommandBuffer {
     if (!impl_->initialized) {
-        throw std::logic_error("direct-light composite pass must be initialized before recording");
+        throw std::logic_error("light composite pass must be initialized before recording");
     }
 
     const auto frame = render_graph_.current_frame_index();
@@ -251,8 +258,6 @@ auto DirectLightCompositePass::record() -> vk::CommandBuffer {
 
     const std::array descriptor_sets{*impl_->descriptor_sets.at(frame)};
     command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *impl_->pipeline_layout, 0, descriptor_sets, {});
-    command_buffer.pushConstants(*impl_->pipeline_layout, vk::ShaderStageFlagBits::eFragment, 0,
-                                 vk::ArrayProxy<const std::array<float, 4>>(1, &slot.depth_and_normal));
     command_buffer.draw(3, 1, 0, 0);
     command_buffer.end();
     return *command_buffer;

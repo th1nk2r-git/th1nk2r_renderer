@@ -15,6 +15,7 @@ class MemoryAllocator;
 class TlasBuildPass final : public RenderPass {
 public:
     inline static constexpr std::string_view pass_name = "tlas_build";
+    inline static constexpr std::string_view instance_resource = "ray_instances";
     inline static constexpr uint32_t max_instance_count = 65'536;
 
     TlasBuildPass(
@@ -29,6 +30,8 @@ public:
     auto operator=(const TlasBuildPass&) -> TlasBuildPass& = delete;
     TlasBuildPass(TlasBuildPass&&) = delete;
     auto operator=(TlasBuildPass&&) -> TlasBuildPass& = delete;
+
+    static auto declare_resources(RenderGraph& render_graph) -> void;
 
     auto init() -> void override;
     auto configure(RenderGraph& render_graph) -> void override;

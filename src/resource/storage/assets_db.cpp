@@ -151,7 +151,8 @@ auto AssetsDB::add(
     ResourceId<Material> id;
     try {
         id = materials_.add(std::make_unique<Material>(Material{
-            .buffer_index = buffer_index
+            .buffer_index = buffer_index,
+            .alpha_mask = data.alpha_mask_
         }));
     }
     catch (...) {
@@ -212,6 +213,7 @@ auto AssetsDB::upload(
             BufferDesc{
                 .size = buffer_size<Vertex>(vertex_count_),
                 .usage = vk::BufferUsageFlagBits::eVertexBuffer |
+                         vk::BufferUsageFlagBits::eStorageBuffer |
                          vk::BufferUsageFlagBits::eShaderDeviceAddress |
                          vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
                          vk::BufferUsageFlagBits::eTransferDst,
@@ -223,6 +225,7 @@ auto AssetsDB::upload(
             BufferDesc{
                 .size = buffer_size<uint32_t>(index_count_),
                 .usage = vk::BufferUsageFlagBits::eIndexBuffer |
+                         vk::BufferUsageFlagBits::eStorageBuffer |
                          vk::BufferUsageFlagBits::eShaderDeviceAddress |
                          vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
                          vk::BufferUsageFlagBits::eTransferDst,

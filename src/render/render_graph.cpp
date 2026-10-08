@@ -20,8 +20,10 @@ namespace {
             return vk::PipelineStageFlagBits::eEarlyFragmentTests |
                 vk::PipelineStageFlagBits::eLateFragmentTests;
         case ImageUsage::FragmentSampled:
-        case ImageUsage::FragmentStorageWrite:
             return vk::PipelineStageFlagBits::eFragmentShader;
+        case ImageUsage::RayTracingSampled:
+        case ImageUsage::RayTracingStorageWrite:
+            return vk::PipelineStageFlagBits::eRayTracingShaderKHR;
         case ImageUsage::ComputeSampled:
         case ImageUsage::ComputeStorageRead:
         case ImageUsage::ComputeStorageWrite:
@@ -44,10 +46,11 @@ namespace {
             return vk::AccessFlagBits::eDepthStencilAttachmentRead |
                 vk::AccessFlagBits::eDepthStencilAttachmentWrite;
         case ImageUsage::FragmentSampled:
+        case ImageUsage::RayTracingSampled:
         case ImageUsage::ComputeSampled:
         case ImageUsage::ComputeStorageRead:
             return vk::AccessFlagBits::eShaderRead;
-        case ImageUsage::FragmentStorageWrite:
+        case ImageUsage::RayTracingStorageWrite:
             return vk::AccessFlagBits::eShaderWrite;
         case ImageUsage::ComputeStorageWrite:
             return vk::AccessFlagBits::eShaderRead |
@@ -69,11 +72,13 @@ namespace {
         case ImageUsage::DepthAttachment:
             return vk::ImageLayout::eDepthStencilAttachmentOptimal;
         case ImageUsage::FragmentSampled:
+        case ImageUsage::RayTracingSampled:
         case ImageUsage::ComputeSampled:
             return vk::ImageLayout::eShaderReadOnlyOptimal;
+        case ImageUsage::RayTracingStorageWrite:
+            return vk::ImageLayout::eGeneral;
         case ImageUsage::ComputeStorageRead:
         case ImageUsage::ComputeStorageWrite:
-        case ImageUsage::FragmentStorageWrite:
             return vk::ImageLayout::eGeneral;
         case ImageUsage::TransferSource:
             return vk::ImageLayout::eTransferSrcOptimal;
@@ -92,11 +97,13 @@ namespace {
         case ImageUsage::DepthAttachment:
             return vk::ImageUsageFlagBits::eDepthStencilAttachment;
         case ImageUsage::FragmentSampled:
+        case ImageUsage::RayTracingSampled:
         case ImageUsage::ComputeSampled:
             return vk::ImageUsageFlagBits::eSampled;
+        case ImageUsage::RayTracingStorageWrite:
+            return vk::ImageUsageFlagBits::eStorage;
         case ImageUsage::ComputeStorageRead:
         case ImageUsage::ComputeStorageWrite:
-        case ImageUsage::FragmentStorageWrite:
             return vk::ImageUsageFlagBits::eStorage;
         case ImageUsage::TransferSource:
             return vk::ImageUsageFlagBits::eTransferSrc;
@@ -139,6 +146,8 @@ namespace {
         case BufferUsage::FragmentStorageRead:
         case BufferUsage::FragmentStorageWrite:
             return vk::PipelineStageFlagBits::eFragmentShader;
+        case BufferUsage::RayTracingStorageRead:
+            return vk::PipelineStageFlagBits::eRayTracingShaderKHR;
         case BufferUsage::ComputeStorageRead:
         case BufferUsage::ComputeStorageWrite:
             return vk::PipelineStageFlagBits::eComputeShader;
@@ -162,6 +171,7 @@ namespace {
             return vk::AccessFlagBits::eUniformRead;
         case BufferUsage::VertexStorageRead:
         case BufferUsage::FragmentStorageRead:
+        case BufferUsage::RayTracingStorageRead:
         case BufferUsage::ComputeStorageRead:
             return vk::AccessFlagBits::eShaderRead;
         case BufferUsage::FragmentStorageWrite:
@@ -190,6 +200,7 @@ namespace {
         case BufferUsage::VertexStorageRead:
         case BufferUsage::FragmentStorageRead:
         case BufferUsage::FragmentStorageWrite:
+        case BufferUsage::RayTracingStorageRead:
         case BufferUsage::ComputeStorageRead:
         case BufferUsage::ComputeStorageWrite:
             return vk::BufferUsageFlagBits::eStorageBuffer;

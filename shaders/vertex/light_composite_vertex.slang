@@ -1,17 +1,17 @@
-struct DirectLightVertexInput
+struct LightCompositeVertexInput
 {
     uint vertex_id : SV_VertexID;
 };
 
-struct DirectLightVertexOutput
+struct LightCompositeVertexOutput
 {
     float4 position : SV_Position;
 };
 
-DirectLightVertexOutput main(DirectLightVertexInput input)
+LightCompositeVertexOutput main(LightCompositeVertexInput input)
 {
     uint vertex_id = input.vertex_id;
-    DirectLightVertexOutput output;
+    LightCompositeVertexOutput output;
 
     float2 p = float2(
         float((vertex_id << 1) & 2),

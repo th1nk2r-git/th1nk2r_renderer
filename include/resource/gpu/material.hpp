@@ -54,6 +54,7 @@ static_assert(offsetof(GpuMaterial, emissive_texture_index) == 80);
 // Like Mesh, Material only describes data stored in global GPU resources.
 struct Material {
     uint32_t buffer_index = 0;
+    bool alpha_mask = false;
 };
 
 auto make_gpu_material(

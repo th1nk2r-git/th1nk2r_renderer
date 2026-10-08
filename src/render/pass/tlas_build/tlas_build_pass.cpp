@@ -4,18 +4,23 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
 #include <glm/mat4x4.hpp>
+#include <glm/matrix.hpp>
+#include <glm/vec4.hpp>
 
 #include "gfx/device/device.hpp"
 #include "gfx/device/memory_allocator.hpp"
 #include "gfx/resource/buffer.hpp"
 #include "render/render_graph.hpp"
 #include "resource/gpu/blas.hpp"
+#include "resource/gpu/material.hpp"
+#include "resource/gpu/mesh.hpp"
 #include "resource/gpu/model.hpp"
 #include "resource/gpu/primitive.hpp"
 #include "resource/storage/assets_db.hpp"
@@ -24,6 +29,22 @@
 #include "scene/scene.hpp"
 
 namespace {
+    struct alignas(16) GpuRayInstance {
+        glm::vec4 model_column_0{1.0F, 0.0F, 0.0F, 0.0F};
+        glm::vec4 model_column_1{0.0F, 1.0F, 0.0F, 0.0F};
+        glm::vec4 model_column_2{0.0F, 0.0F, 1.0F, 0.0F};
+        glm::vec4 normal_column_0{1.0F, 0.0F, 0.0F, 0.0F};
+        glm::vec4 normal_column_1{0.0F, 1.0F, 0.0F, 0.0F};
+        glm::vec4 normal_column_2{0.0F, 0.0F, 1.0F, 0.0F};
+        uint32_t first_index = 0;
+        int32_t vertex_offset = 0;
+        uint32_t material_index = 0;
+        uint32_t padding = 0;
+    };
+
+    static_assert(sizeof(GpuRayInstance) == 112);
+    static_assert(offsetof(GpuRayInstance, first_index) == 96);
+
     constexpr auto build_flags =
         vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate |
         vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
@@ -130,6 +151,7 @@ struct TlasBuildPass::Impl {
         vk::raii::CommandBuffer command_buffer = nullptr;
         uint32_t instance_count = 0;
         uint32_t built_instance_count = 0;
+        std::vector<VkAccelerationStructureInstanceKHR> built_instances;
         TlasOperation operation = TlasOperation::Build;
         bool built = false;
         bool prepared = false;
@@ -144,6 +166,7 @@ struct TlasBuildPass::Impl {
     const AssetsDB& assets;
     std::vector<FrameSlot> slots;
     std::vector<VkAccelerationStructureInstanceKHR> cpu_instances;
+    std::vector<GpuRayInstance> cpu_ray_instances;
     bool initialized = false;
 };
 
@@ -156,6 +179,15 @@ TlasBuildPass::TlasBuildPass(
     impl_(std::make_unique<Impl>(allocator, assets)) {}
 
 TlasBuildPass::~TlasBuildPass() = default;
+
+auto TlasBuildPass::declare_resources(RenderGraph& render_graph) -> void {
+    render_graph.create_buffer(std::string{instance_resource}, BufferDesc{
+        .size = sizeof(GpuRayInstance) * max_instance_count,
+        .usage = vk::BufferUsageFlagBits::eStorageBuffer,
+        .memory = BufferMemoryUsage::Upload,
+        .persistent_mapping = true
+    }, ResourceMultiplicity::PerFrame);
+}
 
 auto TlasBuildPass::init() -> void {
     if (impl_->initialized) {
@@ -285,6 +317,7 @@ auto TlasBuildPass::init() -> void {
     }
 
     impl_->cpu_instances.reserve(max_instance_count);
+    impl_->cpu_ray_instances.reserve(max_instance_count);
     impl_->initialized = true;
 }
 
@@ -300,15 +333,8 @@ auto TlasBuildPass::prepare(const Scene& scene) -> void {
 
     const auto frame_index = render_graph_.current_frame_index();
     auto& slot = impl_->slots.at(frame_index);
-    if (slot.built) {
-        // TODO: Remove this early return after Scene provides reliable TLAS
-        // dirty/revision tracking. Until then the initial TLAS stays static.
-        slot.operation = TlasOperation::None;
-        slot.prepared = true;
-        return;
-    }
-
     impl_->cpu_instances.clear();
+    impl_->cpu_ray_instances.clear();
     for (const auto& entity : scene.entities()) {
         const auto* mesh_renderer = entity.get_component<MeshRenderer>();
         if (mesh_renderer == nullptr) {
@@ -318,6 +344,7 @@ auto TlasBuildPass::prepare(const Scene& scene) -> void {
         const auto model = transform == nullptr
             ? glm::mat4{1.0F}
             : transform->model_matrix();
+        const auto normal_matrix = glm::transpose(glm::inverse(glm::mat3{model}));
         const auto& render_model = impl_->assets.query(
             mesh_renderer->model_id()
         );
@@ -331,6 +358,8 @@ auto TlasBuildPass::prepare(const Scene& scene) -> void {
 
             const auto blas_id = ResourceId<Blas>{primitive.mesh.value()};
             const auto& blas = impl_->assets.query(blas_id);
+            const auto& mesh = impl_->assets.query(primitive.mesh);
+            const auto& material = impl_->assets.query(primitive.material);
             const auto instance_index = static_cast<uint32_t>(
                 impl_->cpu_instances.size()
             );
@@ -339,26 +368,37 @@ auto TlasBuildPass::prepare(const Scene& scene) -> void {
             instance.instanceCustomIndex = instance_index;
             instance.mask = 0xFF;
             instance.instanceShaderBindingTableRecordOffset = 0;
-            instance.flags =
-                VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+            instance.flags = material.alpha_mask ? 0 : VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
             instance.accelerationStructureReference = blas.address;
             impl_->cpu_instances.push_back(instance);
+            impl_->cpu_ray_instances.push_back(GpuRayInstance{
+                .model_column_0 = model[0],
+                .model_column_1 = model[1],
+                .model_column_2 = model[2],
+                .normal_column_0 = glm::vec4{normal_matrix[0], 0.0F},
+                .normal_column_1 = glm::vec4{normal_matrix[1], 0.0F},
+                .normal_column_2 = glm::vec4{normal_matrix[2], 0.0F},
+                .first_index = mesh.first_index,
+                .vertex_offset = mesh.vertex_offset,
+                .material_index = material.buffer_index
+            });
         }
     }
     const auto instance_count = static_cast<uint32_t>(
         impl_->cpu_instances.size()
     );
     if (instance_count != 0) {
-        slot.instance_buffer.write(
-            impl_->cpu_instances.data(),
-            instance_buffer_size(instance_count)
-        );
+        render_graph_.buffer(instance_resource).write(impl_->cpu_ray_instances.data(), sizeof(GpuRayInstance) * instance_count);
     }
     slot.instance_count = instance_count;
-    slot.operation = slot.built &&
-        slot.built_instance_count == instance_count
-        ? TlasOperation::Update
-        : TlasOperation::Build;
+    const bool unchanged = slot.built && slot.built_instances.size() == impl_->cpu_instances.size() &&
+        std::equal(slot.built_instances.begin(), slot.built_instances.end(), impl_->cpu_instances.begin(),
+            [](const auto& first, const auto& second) { return std::memcmp(&first, &second, sizeof(first)) == 0; });
+    slot.operation = unchanged ? TlasOperation::None :
+        slot.built && slot.built_instance_count == instance_count ? TlasOperation::Update : TlasOperation::Build;
+    if (!unchanged && instance_count != 0) {
+        slot.instance_buffer.write(impl_->cpu_instances.data(), instance_buffer_size(instance_count));
+    }
     slot.prepared = true;
 }
 
@@ -393,27 +433,6 @@ auto TlasBuildPass::record() -> vk::CommandBuffer {
         slot.prepared = false;
         return *slot.command_buffer;
     }
-
-    const std::array instance_barriers{
-        vk::BufferMemoryBarrier{}
-            .setSrcAccessMask(vk::AccessFlagBits::eHostWrite)
-            .setDstAccessMask(
-                vk::AccessFlagBits::eAccelerationStructureReadKHR
-            )
-            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setBuffer(slot.instance_buffer.get())
-            .setOffset(0)
-            .setSize(slot.instance_buffer.size())
-    };
-    slot.command_buffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eHost,
-        vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-        {},
-        {},
-        instance_barriers,
-        {}
-    );
 
     const auto geometry = tlas_geometry(slot.instance_address);
     vk::AccelerationStructureBuildGeometryInfoKHR build_info{};
@@ -458,7 +477,7 @@ auto TlasBuildPass::record() -> vk::CommandBuffer {
     };
     slot.command_buffer.pipelineBarrier(
         vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-        vk::PipelineStageFlagBits::eFragmentShader,
+        vk::PipelineStageFlagBits::eRayTracingShaderKHR,
         {},
         tlas_barriers,
         {},
@@ -467,6 +486,7 @@ auto TlasBuildPass::record() -> vk::CommandBuffer {
     slot.command_buffer.end();
     slot.built = true;
     slot.built_instance_count = slot.instance_count;
+    slot.built_instances = impl_->cpu_instances;
     slot.prepared = false;
     return *slot.command_buffer;
 }
